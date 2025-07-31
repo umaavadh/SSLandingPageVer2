@@ -72,32 +72,47 @@ const ClientDashboard: React.FC = () => {
   useEffect(() => {
     const loadUserData = async () => {
       try {
-        const { user } = await getCurrentUser();
+        const { user } = await getCurrentUser()
         if (user) {
-          setProfileData(prev => ({
-            ...prev,
-            email: user.email || ''
-          }));
-          setOriginalData(prev => ({
-            ...prev,
-            email: user.email || ''
-          }));
+          // Load user profile from database
+          const { getUserProfile } = await import('../lib/supabase')
+          const { data: profile, error } = await getUserProfile()
           
-          // Simulate checking if user has completed profile
-          const hasCompletedProfile = user.user_metadata?.profile_completed;
-          setIsNewUser(!hasCompletedProfile);
-          
-          if (hasCompletedProfile) {
-            setLastUpdated(new Date(user.updated_at || Date.now()));
+          if (error) {
+            console.error('Error loading profile:', error)
+            // Set basic data from auth user
+            setProfileData(prev => ({ ...prev, email: user.email || '' }))
+            setOriginalData(prev => ({ ...prev, email: user.email || '' }))
+          } else if (profile) {
+            // Set data from database profile
+            const profileData = {
+              fullName: profile.full_name || '',
+              email: user.email || '',
+              mobileNumber: profile.mobile_number || '',
+              countryCode: profile.country_code || '+91',
+              companyName: profile.company_name || '',
+              gstNumber: profile.gst_number || '',
+              clientId: profile.client_id || ''
+            }
+            setProfileData(profileData)
+            setOriginalData(profileData)
+            setIsNewUser(!profile.profile_completed)
+            if (profile.updated_at) {
+              setLastUpdated(new Date(profile.updated_at))
+            }
+          } else {
+            // No profile exists, set basic data
+            setProfileData(prev => ({ ...prev, email: user.email || '' }))
+            setOriginalData(prev => ({ ...prev, email: user.email || '' }))
           }
         }
       } catch (error) {
-        console.error('Error loading user data:', error);
+        console.error('Error loading user data:', error)
       }
-    };
+    }
 
-    loadUserData();
-  }, []);
+    loadUserData()
+  }, [])
 
   // Calculate profile completion percentage
   const calculateCompletion = () => {
@@ -162,22 +177,47 @@ const ClientDashboard: React.FC = () => {
   };
 
   // Handle save changes
-  const handleSave = () => {
+  const handleSave = async () => {
     if (validateForm()) {
-      if (!profileData.clientId && profileData.email) {
-        const newClientId = generateClientId(profileData.email);
-        setProfileData(prev => ({ ...prev, clientId: newClientId }));
-        setOriginalData({ ...profileData, clientId: newClientId });
-      } else {
-        setOriginalData({ ...profileData });
+      try {
+        const { updateUserProfile } = await import('../lib/supabase')
+        
+        const profileUpdateData = {
+          user_type: 'client',
+          full_name: profileData.fullName,
+          mobile_number: profileData.mobileNumber,
+          country_code: profileData.countryCode,
+          company_name: profileData.companyName,
+          gst_number: profileData.gstNumber,
+          profile_completed: true
+        }
+        
+        const { data, error } = await updateUserProfile(profileUpdateData)
+        
+        if (error) {
+          console.error('Error saving profile:', error)
+          // Handle error - you might want to show a toast notification
+          return
+        }
+        
+        if (data) {
+          // Update local state with saved data
+          const updatedProfileData = {
+            ...profileData,
+            clientId: data.client_id || profileData.clientId
+          }
+          setProfileData(updatedProfileData)
+          setOriginalData(updatedProfileData)
+          setHasChanges(false)
+          setIsEditing(false)
+          setLastUpdated(new Date())
+          setIsNewUser(false)
+        }
+      } catch (error) {
+        console.error('Error saving profile:', error)
       }
-      setHasChanges(false);
-      setIsEditing(false);
-      setLastUpdated(new Date());
-      setIsNewUser(false);
-      console.log('Saving profile data:', profileData);
     }
-  };
+  }
 
   // Handle cancel changes
   const handleCancel = () => {
@@ -232,6 +272,53 @@ const ClientDashboard: React.FC = () => {
       setIsGeneratingChecklist(false);
     }
   };
+
+  // Handle project creation
+  const handleCreateProject = async () => {
+    if (generatedChecklist.length === 0) {
+      setChecklistError('No checklist available to create project')
+      return
+    }
+
+    try {
+      const { createProject } = await import('../lib/supabase')
+      
+      const projectData = {
+        project_name: `Video Project - ${new Date().toLocaleDateString()}`,
+        description: projectDescription,
+        category: 'Video Production',
+        status: 'draft'
+      }
+      
+      const deliverables = generatedChecklist.map(item => ({
+        requirement: item.requirement,
+        description: item.description,
+        category: item.category,
+        priority: item.priority,
+        verifiable: item.verifiable
+      }))
+      
+      const { data, error } = await createProject(projectData, deliverables)
+      
+      if (error) {
+        console.error('Error creating project:', error)
+        setChecklistError('Failed to create project. Please try again.')
+        return
+      }
+      
+      if (data) {
+        // Reset form and switch to projects tab
+        setProjectDescription('')
+        setGeneratedChecklist([])
+        setShowChecklist(false)
+        setActiveTab('projects')
+        // You might want to show a success message here
+      }
+    } catch (error) {
+      console.error('Error creating project:', error)
+      setChecklistError('An unexpected error occurred while creating the project')
+    }
+  }
 
   // Get priority color
   const getPriorityColor = (priority: string) => {
@@ -625,6 +712,7 @@ const ClientDashboard: React.FC = () => {
             </button>
             <button
               className="flex items-center justify-center space-x-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
+              onClick={handleCreateProject}
             >
               <CheckCircle className="h-4 w-4" />
               <span>Create Project with This Checklist</span>
@@ -637,21 +725,44 @@ const ClientDashboard: React.FC = () => {
 
   const renderMyProjectsContent = () => (
     <div className="space-y-6 sm:space-y-8">
+      {/* Projects Header */}
       <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
-        <div className="text-center py-12">
-          <Briefcase className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-white mb-2">No Projects Yet</h3>
-          <p className="text-gray-400 mb-6">Create your first project to get started</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 space-y-4 sm:space-y-0">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">My Projects</h2>
+            <p className="text-sm sm:text-base text-gray-300">
+              Manage and track your projects with freelancers
+            </p>
+          </div>
           <button
             onClick={() => setActiveTab('create-project')}
-            className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+            className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 w-full sm:w-auto justify-center"
           >
-            Create Project
+            <Plus className="h-4 w-4" />
+            <span>Create Project</span>
           </button>
+        </div>
+
+        {/* Projects List - This will be populated with real data */}
+        <div className="text-center py-12">
+          <div className="flex flex-col items-center space-y-4">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-700 rounded-full flex items-center justify-center">
+              <Briefcase className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-lg sm:text-xl font-semibold text-white">
+                No Projects Yet
+              </h3>
+              <p className="text-sm sm:text-base text-gray-400 max-w-md">
+                Create your first project to start working with freelancers. 
+                Our AI will help you define clear requirements and manage deliverables.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  );
+  )
 
   const renderTransactionsContent = () => (
     <div className="space-y-6 sm:space-y-8">

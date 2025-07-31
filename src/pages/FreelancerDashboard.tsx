@@ -62,32 +62,47 @@ const FreelancerDashboard: React.FC = () => {
   useEffect(() => {
     const loadUserData = async () => {
       try {
-        const { user } = await getCurrentUser();
+        const { user } = await getCurrentUser()
         if (user) {
-          setProfileData(prev => ({
-            ...prev,
-            email: user.email || ''
-          }));
-          setOriginalData(prev => ({
-            ...prev,
-            email: user.email || ''
-          }));
+          // Load user profile from database
+          const { getUserProfile } = await import('../lib/supabase')
+          const { data: profile, error } = await getUserProfile()
           
-          // Simulate checking if user has completed profile
-          const hasCompletedProfile = user.user_metadata?.profile_completed;
-          setIsNewUser(!hasCompletedProfile);
-          
-          if (hasCompletedProfile) {
-            setLastUpdated(new Date(user.updated_at || Date.now()));
+          if (error) {
+            console.error('Error loading profile:', error)
+            // Set basic data from auth user
+            setProfileData(prev => ({ ...prev, email: user.email || '' }))
+            setOriginalData(prev => ({ ...prev, email: user.email || '' }))
+          } else if (profile) {
+            // Set data from database profile
+            const profileData = {
+              fullName: profile.full_name || '',
+              email: user.email || '',
+              mobileNumber: profile.mobile_number || '',
+              countryCode: profile.country_code || '+91',
+              upiId: profile.upi_id || '',
+              aadharNumber: profile.aadhar_number || '',
+              freelancerId: profile.freelancer_id || ''
+            }
+            setProfileData(profileData)
+            setOriginalData(profileData)
+            setIsNewUser(!profile.profile_completed)
+            if (profile.updated_at) {
+              setLastUpdated(new Date(profile.updated_at))
+            }
+          } else {
+            // No profile exists, set basic data
+            setProfileData(prev => ({ ...prev, email: user.email || '' }))
+            setOriginalData(prev => ({ ...prev, email: user.email || '' }))
           }
         }
       } catch (error) {
-        console.error('Error loading user data:', error);
+        console.error('Error loading user data:', error)
       }
-    };
+    }
 
-    loadUserData();
-  }, []);
+    loadUserData()
+  }, [])
 
   // Calculate profile completion percentage
   const calculateCompletion = () => {
@@ -168,24 +183,47 @@ const FreelancerDashboard: React.FC = () => {
   };
 
   // Handle save changes
-  const handleSave = () => {
+  const handleSave = async () => {
     if (validateForm()) {
-      // Generate freelancer ID if profile is being completed for the first time
-      if (!profileData.freelancerId && profileData.email) {
-        const newFreelancerId = generateFreelancerId(profileData.email);
-        setProfileData(prev => ({ ...prev, freelancerId: newFreelancerId }));
-        setOriginalData({ ...profileData, freelancerId: newFreelancerId });
-      } else {
-        setOriginalData({ ...profileData });
+      try {
+        const { updateUserProfile } = await import('../lib/supabase')
+        
+        const profileUpdateData = {
+          user_type: 'freelancer',
+          full_name: profileData.fullName,
+          mobile_number: profileData.mobileNumber,
+          country_code: profileData.countryCode,
+          upi_id: profileData.upiId,
+          aadhar_number: profileData.aadharNumber,
+          profile_completed: true
+        }
+        
+        const { data, error } = await updateUserProfile(profileUpdateData)
+        
+        if (error) {
+          console.error('Error saving profile:', error)
+          // Handle error - you might want to show a toast notification
+          return
+        }
+        
+        if (data) {
+          // Update local state with saved data
+          const updatedProfileData = {
+            ...profileData,
+            freelancerId: data.freelancer_id || profileData.freelancerId
+          }
+          setProfileData(updatedProfileData)
+          setOriginalData(updatedProfileData)
+          setHasChanges(false)
+          setIsEditing(false)
+          setLastUpdated(new Date())
+          setIsNewUser(false)
+        }
+      } catch (error) {
+        console.error('Error saving profile:', error)
       }
-      setHasChanges(false);
-      setIsEditing(false);
-      setLastUpdated(new Date());
-      setIsNewUser(false);
-      // Here you would typically save to Supabase
-      console.log('Saving profile data:', profileData);
     }
-  };
+  }
 
   // Handle cancel changes
   const handleCancel = () => {
