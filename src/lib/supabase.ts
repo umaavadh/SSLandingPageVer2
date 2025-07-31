@@ -134,3 +134,4 @@ export const getProjectDeliverables = async (projectId: string) => {
     .order('created_at', { ascending: true })
 
   return { data, error }
+}
