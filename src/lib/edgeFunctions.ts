@@ -1,6 +1,12 @@
 import { supabase } from './supabase'
 
-// Types for the generateChecklist function
+// Types for the conversational generateChecklist function
+export interface ConversationMessage {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: string
+}
+
 export interface ChecklistItem {
   id: string
   category: string
@@ -10,20 +16,30 @@ export interface ChecklistItem {
   verifiable: boolean
 }
 
-export interface ChecklistResponse {
+export interface ConversationalResponse {
   success: boolean
+  isComplete: boolean
+  response?: string
+  followUpQuestions?: string[]
   checklist?: ChecklistItem[]
   totalItems?: number
   estimatedDuration?: string
+  conversationHistory?: ConversationMessage[]
   error?: string
 }
 
 /**
- * Generate a project checklist using AI
+ * Generate a project checklist using conversational AI
  * @param description - The video project description
- * @returns Promise<ChecklistResponse>
+ * @param conversationHistory - Previous conversation messages
+ * @param generateFinal - Force final checklist generation
+ * @returns Promise<ConversationalResponse>
  */
-export const generateChecklist = async (description: string): Promise<ChecklistResponse> => {
+export const generateChecklist = async (
+  description: string, 
+  conversationHistory?: ConversationMessage[],
+  generateFinal?: boolean
+): Promise<ConversationalResponse> => {
   try {
     // Validate input
     if (!description || typeof description !== 'string') {
@@ -40,18 +56,23 @@ export const generateChecklist = async (description: string): Promise<ChecklistR
       }
     }
 
-    console.log('Calling generateChecklist edge function with description:', description.substring(0, 100) + '...')
+    console.log('Calling conversational generateChecklist edge function...')
 
     // Call the edge function
     const { data, error } = await supabase.functions.invoke('generate-checklist', {
-      body: { description: description.trim() }
+      body: { 
+        description: description.trim(),
+        conversationHistory: conversationHistory || [],
+        generateFinal: generateFinal || false
+      }
     })
 
     if (error) {
       console.error('Edge function error:', error)
       return {
         success: false,
-        error: error.message || error.details || 'Failed to generate checklist'
+        isComplete: false,
+        error: error.message || error.details || 'Failed to generate response'
       }
     }
 
@@ -61,7 +82,8 @@ export const generateChecklist = async (description: string): Promise<ChecklistR
     if (!data || typeof data !== 'object') {
       return {
         success: false,
-        error: 'Invalid response from checklist service'
+        isComplete: false,
+        error: 'Invalid response from conversation service'
       }
     }
 
@@ -69,36 +91,19 @@ export const generateChecklist = async (description: string): Promise<ChecklistR
     if (data.success === false) {
       return {
         success: false,
-        error: data.error || 'Unknown error from checklist service'
+        isComplete: false,
+        error: data.error || 'Unknown error from conversation service'
       }
     }
 
-    return data as ChecklistResponse
+    return data as ConversationalResponse
 
   } catch (error) {
-    console.error('Error calling generateChecklist:', error)
+    console.error('Error calling conversational generateChecklist:', error)
     return {
       success: false,
-      error: 'An unexpected error occurred while generating the checklist'
+      isComplete: false,
+      error: 'An unexpected error occurred while processing the conversation'
     }
   }
 }
-
-// Example usage:
-/*
-import { generateChecklist } from '../lib/edgeFunctions'
-
-const handleGenerateChecklist = async () => {
-  const description = "Create a 60-second promotional video for our tech startup, featuring product demos, customer testimonials, and a call-to-action. The video should be modern, professional, and optimized for social media platforms."
-  
-  const result = await generateChecklist(description)
-  
-  if (result.success && result.checklist) {
-    console.log('Generated checklist:', result.checklist)
-    console.log('Total items:', result.totalItems)
-    console.log('Estimated duration:', result.estimatedDuration)
-  } else {
-    console.error('Error:', result.error)
-  }
-}
-*/

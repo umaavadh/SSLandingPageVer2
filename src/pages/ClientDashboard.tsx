@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Briefcase, CreditCard, MessageSquare, Shield, Edit3, Save, X, Plus, Minus, Wand2, Loader, CheckCircle, AlertCircle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getCurrentUser, signOut } from '../lib/supabase';
-import { generateChecklist, ChecklistItem } from '../lib/edgeFunctions';
+import { generateChecklist, ChecklistItem, ConversationMessage } from '../lib/edgeFunctions';
 import AddProjectForm from '../components/AddProjectForm';
 
 interface ProfileData {
@@ -44,10 +44,17 @@ const ClientDashboard: React.FC = () => {
 
   // Project creation state
   const [projectDescription, setProjectDescription] = useState('');
-  const [isGeneratingChecklist, setIsGeneratingChecklist] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [generatedChecklist, setGeneratedChecklist] = useState<ChecklistItem[]>([]);
-  const [checklistError, setChecklistError] = useState('');
+  const [conversationError, setConversationError] = useState('');
   const [showChecklist, setShowChecklist] = useState(false);
+  
+  // Conversation state
+  const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([]);
+  const [currentResponse, setCurrentResponse] = useState('');
+  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([]);
+  const [isConversationMode, setIsConversationMode] = useState(false);
+  const [conversationComplete, setConversationComplete] = useState(false);
 
   const countryCodes = [
     { code: '+91', country: 'India', flag: '🇮🇳' },
@@ -238,45 +245,135 @@ const ClientDashboard: React.FC = () => {
   };
 
   // Handle checklist generation
-  const handleGenerateChecklist = async () => {
+  const handleStartConversation = async () => {
     if (!projectDescription.trim()) {
-      setChecklistError('Please enter a project description first');
+      setConversationError('Please enter a project description first');
       return;
     }
 
     if (projectDescription.trim().length < 50) {
-      setChecklistError('Project description must be at least 50 characters long');
+      setConversationError('Project description must be at least 50 characters long');
       return;
     }
 
-    setIsGeneratingChecklist(true);
-    setChecklistError('');
-    setGeneratedChecklist([]);
+    setIsGenerating(true);
+    setConversationError('');
+    setIsConversationMode(true);
 
     try {
-      const result = await generateChecklist(projectDescription);
+      const result = await generateChecklist(projectDescription, conversationHistory);
+
+      if (result.success) {
+        if (result.isComplete && result.checklist) {
+          // Conversation complete, show final checklist
+          setGeneratedChecklist(result.checklist);
+          setShowChecklist(true);
+          setConversationComplete(true);
+          setIsConversationMode(false);
+        } else {
+          // Continue conversation
+          setCurrentResponse(result.response || '');
+          setFollowUpQuestions(result.followUpQuestions || []);
+          setConversationHistory(result.conversationHistory || []);
+        }
+        setConversationError('');
+      } else {
+        setConversationError(result.error || 'Failed to start conversation');
+        setIsConversationMode(false);
+      }
+    } catch (error) {
+      console.error('Error starting conversation:', error);
+      setConversationError('An unexpected error occurred while starting the conversation');
+      setIsConversationMode(false);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Handle conversation continuation
+  const handleContinueConversation = async (response: string) => {
+    if (!response.trim()) {
+      setConversationError('Please provide a response');
+      return;
+    }
+
+    setIsGenerating(true);
+    setConversationError('');
+
+    try {
+      const result = await generateChecklist(response, conversationHistory);
+
+      if (result.success) {
+        if (result.isComplete && result.checklist) {
+          // Conversation complete, show final checklist
+          setGeneratedChecklist(result.checklist);
+          setShowChecklist(true);
+          setConversationComplete(true);
+          setIsConversationMode(false);
+        } else {
+          // Continue conversation
+          setCurrentResponse(result.response || '');
+          setFollowUpQuestions(result.followUpQuestions || []);
+          setConversationHistory(result.conversationHistory || []);
+        }
+        setConversationError('');
+      } else {
+        setConversationError(result.error || 'Failed to continue conversation');
+      }
+    } catch (error) {
+      console.error('Error continuing conversation:', error);
+      setConversationError('An unexpected error occurred while continuing the conversation');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Handle generating final checklist
+  const handleGenerateFinalChecklist = async () => {
+    setIsGenerating(true);
+    setConversationError('');
+
+    try {
+      const result = await generateChecklist(
+        'Please generate the final checklist based on our conversation',
+        conversationHistory,
+        true // Force final generation
+      );
 
       if (result.success && result.checklist) {
         setGeneratedChecklist(result.checklist);
         setShowChecklist(true);
-        setChecklistError('');
+        setConversationComplete(true);
+        setIsConversationMode(false);
+        setConversationError('');
       } else {
-        setChecklistError(result.error || 'Failed to generate checklist');
-        setShowChecklist(false);
+        setConversationError(result.error || 'Failed to generate final checklist');
       }
     } catch (error) {
-      console.error('Error generating checklist:', error);
-      setChecklistError('An unexpected error occurred while generating the checklist');
-      setShowChecklist(false);
+      console.error('Error generating final checklist:', error);
+      setConversationError('An unexpected error occurred while generating the final checklist');
     } finally {
-      setIsGeneratingChecklist(false);
+      setIsGenerating(false);
     }
+  };
+
+  // Reset conversation
+  const handleResetConversation = () => {
+    setProjectDescription('');
+    setConversationHistory([]);
+    setCurrentResponse('');
+    setFollowUpQuestions([]);
+    setIsConversationMode(false);
+    setConversationComplete(false);
+    setShowChecklist(false);
+    setGeneratedChecklist([]);
+    setConversationError('');
   };
 
   // Handle project creation
   const handleCreateProject = async () => {
     if (generatedChecklist.length === 0) {
-      setChecklistError('No checklist available to create project')
+      setConversationError('No checklist available to create project')
       return
     }
 
@@ -302,21 +399,19 @@ const ClientDashboard: React.FC = () => {
       
       if (error) {
         console.error('Error creating project:', error)
-        setChecklistError('Failed to create project. Please try again.')
+        setConversationError('Failed to create project. Please try again.')
         return
       }
       
       if (data) {
         // Reset form and switch to projects tab
-        setProjectDescription('')
-        setGeneratedChecklist([])
-        setShowChecklist(false)
+        handleResetConversation()
         setActiveTab('projects')
         // You might want to show a success message here
       }
     } catch (error) {
       console.error('Error creating project:', error)
-      setChecklistError('An unexpected error occurred while creating the project')
+      setConversationError('An unexpected error occurred while creating the project')
     }
   }
 
@@ -558,73 +653,95 @@ const ClientDashboard: React.FC = () => {
 
   const renderCreateProjectContent = () => (
     <div className="space-y-6 sm:space-y-8">
-      {/* Project Creation Form */}
+      {/* Project Description Form */}
       <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
         <div className="mb-6 sm:mb-8">
           <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">
-            Create New Video Project
+            {isConversationMode ? 'Video Project Consultation' : 'Create New Video Project'}
           </h2>
           <p className="text-sm sm:text-base text-gray-300">
-            Describe your video project requirements and we'll generate a detailed checklist using AI.
+            {isConversationMode 
+              ? 'Our AI consultant will ask follow-up questions to create the perfect checklist for your project.'
+              : 'Describe your video project requirements and our AI consultant will help you create a detailed checklist.'
+            }
           </p>
         </div>
 
         <div className="space-y-6">
-          {/* Project Description */}
-          <div>
-            <label htmlFor="project-description" className="block text-gray-300 text-sm font-semibold mb-2">
-              Project Description *
-            </label>
-            <textarea
-              id="project-description"
-              rows={6}
-              value={projectDescription}
-              onChange={(e) => setProjectDescription(e.target.value)}
-              placeholder="Describe your video project in detail. Include the purpose, target audience, style preferences, duration, specific elements needed, and any other requirements..."
-              className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-400/50 bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base resize-none"
-            />
-            <div className="flex justify-between items-center mt-1">
-              <p className="text-gray-400 text-xs sm:text-sm">
-                Minimum 50 characters required for AI checklist generation
-              </p>
-              <span className={`text-xs sm:text-sm ${
-                projectDescription.length >= 50 ? 'text-green-400' : 'text-gray-400'
-              }`}>
-                {projectDescription.length}/50
-              </span>
+          {!isConversationMode ? (
+            /* Initial Project Description */
+            <div>
+              <label htmlFor="project-description" className="block text-gray-300 text-sm font-semibold mb-2">
+                Project Description *
+              </label>
+              <textarea
+                id="project-description"
+                rows={6}
+                value={projectDescription}
+                onChange={(e) => setProjectDescription(e.target.value)}
+                placeholder="Describe your video project in detail. Include the purpose, target audience, style preferences, duration, specific elements needed, and any other requirements..."
+                className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-400/50 bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base resize-none"
+                disabled={isGenerating}
+              />
+              <div className="flex justify-between items-center mt-1">
+                <p className="text-gray-400 text-xs sm:text-sm">
+                  Minimum 50 characters required to start consultation
+                </p>
+                <span className={`text-xs sm:text-sm ${
+                  projectDescription.length >= 50 ? 'text-green-400' : 'text-gray-400'
+                }`}>
+                  {projectDescription.length}/50
+                </span>
+              </div>
             </div>
-            {checklistError && (
-              <p className="text-red-400 text-xs sm:text-sm mt-1 flex items-center">
-                <AlertCircle className="h-4 w-4 mr-1" />
-                {checklistError}
-              </p>
-            )}
-          </div>
+          ) : (
+            /* Conversation Interface */
+            <ConversationInterface 
+              currentResponse={currentResponse}
+              followUpQuestions={followUpQuestions}
+              conversationHistory={conversationHistory}
+              onContinueConversation={handleContinueConversation}
+              onGenerateFinalChecklist={handleGenerateFinalChecklist}
+              isGenerating={isGenerating}
+            />
+          )}
 
-          {/* Generate Checklist Button */}
-          <div className="pt-4 border-t border-gray-700">
-            <button
-              onClick={handleGenerateChecklist}
-              disabled={isGeneratingChecklist || projectDescription.trim().length < 50}
-              className={`w-full flex items-center justify-center space-x-2 py-3 sm:py-4 rounded-lg font-semibold text-base sm:text-lg transition-colors focus:outline-none focus:ring-2 ${
-                isGeneratingChecklist || projectDescription.trim().length < 50
-                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
-                  : 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-400'
-              }`}
-            >
-              {isGeneratingChecklist ? (
-                <>
-                  <Loader className="h-5 w-5 sm:h-6 sm:w-6 animate-spin" />
-                  <span>Generating AI Checklist...</span>
-                </>
-              ) : (
-                <>
-                  <Wand2 className="h-5 w-5 sm:h-6 sm:w-6" />
-                  <span>Generate AI Checklist</span>
-                </>
-              )}
-            </button>
-          </div>
+          {/* Error Display */}
+          {conversationError && (
+            <div className="p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
+              <p className="text-red-400 text-sm flex items-center">
+                <AlertCircle className="h-4 w-4 mr-2" />
+                {conversationError}
+              </p>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          {!isConversationMode && (
+            <div className="pt-4 border-t border-gray-700">
+              <button
+                onClick={handleStartConversation}
+                disabled={isGenerating || projectDescription.trim().length < 50}
+                className={`w-full flex items-center justify-center space-x-2 py-3 sm:py-4 rounded-lg font-semibold text-base sm:text-lg transition-colors focus:outline-none focus:ring-2 ${
+                  isGenerating || projectDescription.trim().length < 50
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-400'
+                }`}
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader className="h-5 w-5 sm:h-6 sm:w-6 animate-spin" />
+                    <span>Starting Consultation...</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
+                    <span>Start AI Consultation</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -701,9 +818,7 @@ const ClientDashboard: React.FC = () => {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end space-y-3 sm:space-y-0 sm:space-x-4 mt-6 sm:mt-8 pt-6 border-t border-gray-700">
             <button
               onClick={() => {
-                setShowChecklist(false);
-                setGeneratedChecklist([]);
-                setProjectDescription('');
+                handleResetConversation();
               }}
               className="flex items-center justify-center space-x-2 px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
             >
@@ -861,6 +976,147 @@ const ClientDashboard: React.FC = () => {
         {/* Tab Content */}
         {renderTabContent()}
       </main>
+    </div>
+  );
+};
+
+// Conversation Interface Component
+interface ConversationInterfaceProps {
+  currentResponse: string;
+  followUpQuestions: string[];
+  conversationHistory: ConversationMessage[];
+  onContinueConversation: (response: string) => void;
+  onGenerateFinalChecklist: () => void;
+  isGenerating: boolean;
+}
+
+const ConversationInterface: React.FC<ConversationInterfaceProps> = ({
+  currentResponse,
+  followUpQuestions,
+  conversationHistory,
+  onContinueConversation,
+  onGenerateFinalChecklist,
+  isGenerating
+}) => {
+  const [userResponse, setUserResponse] = useState('');
+
+  const handleSubmitResponse = () => {
+    if (userResponse.trim()) {
+      onContinueConversation(userResponse.trim());
+      setUserResponse('');
+    }
+  };
+
+  const handleQuestionClick = (question: string) => {
+    setUserResponse(question);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Conversation History */}
+      {conversationHistory.length > 0 && (
+        <div className="bg-gray-700 rounded-lg p-4 max-h-64 overflow-y-auto">
+          <h4 className="text-sm font-semibold text-gray-300 mb-3">Conversation History:</h4>
+          <div className="space-y-3">
+            {conversationHistory.slice(-4).map((message, index) => (
+              <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-xs lg:max-w-md px-3 py-2 rounded-lg text-sm ${
+                  message.role === 'user' 
+                    ? 'bg-purple-600 text-white' 
+                    : 'bg-gray-600 text-gray-200'
+                }`}>
+                  {message.content}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Current AI Response */}
+      {currentResponse && (
+        <div className="bg-gray-700 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0 w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center">
+              <MessageSquare className="h-4 w-4 text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-white text-sm sm:text-base leading-relaxed">
+                {currentResponse}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Follow-up Questions */}
+      {followUpQuestions.length > 0 && (
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold text-gray-300">Suggested responses:</h4>
+          <div className="grid gap-2">
+            {followUpQuestions.map((question, index) => (
+              <button
+                key={index}
+                onClick={() => handleQuestionClick(question)}
+                disabled={isGenerating}
+                className="text-left p-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm text-gray-300 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {question}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* User Response Input */}
+      <div className="space-y-3">
+        <label className="block text-gray-300 text-sm font-semibold">
+          Your Response:
+        </label>
+        <textarea
+          rows={3}
+          value={userResponse}
+          onChange={(e) => setUserResponse(e.target.value)}
+          placeholder="Type your response here..."
+          disabled={isGenerating}
+          className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-400/50 bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base resize-none disabled:opacity-50"
+        />
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button
+            onClick={handleSubmitResponse}
+            disabled={isGenerating || !userResponse.trim()}
+            className={`flex-1 flex items-center justify-center space-x-2 py-3 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 ${
+              isGenerating || !userResponse.trim()
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
+                : 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-400'
+            }`}
+          >
+            {isGenerating ? (
+              <>
+                <Loader className="h-4 w-4 animate-spin" />
+                <span>Processing...</span>
+              </>
+            ) : (
+              <>
+                <MessageSquare className="h-4 w-4" />
+                <span>Continue Conversation</span>
+              </>
+            )}
+          </button>
+          <button
+            onClick={onGenerateFinalChecklist}
+            disabled={isGenerating || conversationHistory.length < 2}
+            className={`flex-1 flex items-center justify-center space-x-2 py-3 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 ${
+              isGenerating || conversationHistory.length < 2
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
+                : 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-400'
+            }`}
+          >
+            <CheckCircle className="h-4 w-4" />
+            <span>Generate Final Checklist</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
