@@ -12,6 +12,7 @@
 2. Update the `.env` file with your actual Supabase credentials:
    - Replace `your_supabase_project_url` with your Supabase project URL
    - Replace `your_supabase_anon_key` with your Supabase anonymous/public key
+   - Replace `your_openai_api_key_here` with your OpenAI API key (for AI features)
 
 ### Getting Supabase Credentials
 
@@ -19,6 +20,20 @@
 2. In your project dashboard, go to Settings > API
 3. Copy the "Project URL" and "Project API keys" (anon/public key)
 4. Paste these values into your `.env` file
+
+### Getting OpenAI API Key
+
+1. Go to [OpenAI Platform](https://platform.openai.com/api-keys)
+2. Create a new API key or use an existing one
+3. Add it to your `.env` file as `OPENAI_API_KEY`
+
+### Edge Functions
+
+The project includes Supabase Edge Functions for AI-powered features:
+
+- `generateChecklist`: Creates detailed project checklists using GPT-4o
+
+These functions are automatically deployed to Supabase and can be called from your frontend.
 
 ### Running the Application
 
