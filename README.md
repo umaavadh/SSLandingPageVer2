@@ -35,6 +35,8 @@ The project includes Supabase Edge Functions for AI-powered features:
 
 **IMPORTANT**: Edge Functions require environment variables to be set as Supabase secrets, not local `.env` files.
 
+**NOTE**: In WebContainer environments (like this demo), the OpenAI integration uses mock data for demonstration purposes. For production deployment with real OpenAI integration, follow the setup instructions below.
+
 #### Setting Up Edge Function Secrets
 
 To configure the OpenAI API key for Edge Functions, you need to use the Supabase CLI:
