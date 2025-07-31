@@ -1,15 +1,22 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+// Use demo/fallback values if environment variables are not set or are placeholders
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL && 
+  !import.meta.env.VITE_SUPABASE_URL.includes('placeholder') 
+  ? import.meta.env.VITE_SUPABASE_URL 
+  : 'https://demo.supabase.co'
 
-// Check if credentials are properly configured
-const hasValidCredentials = supabaseUrl && 
-  supabaseAnonKey && 
-  !supabaseUrl.includes('placeholder') && 
-  !supabaseAnonKey.includes('placeholder') &&
-  supabaseUrl.startsWith('https://') &&
-  supabaseAnonKey.length > 20
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY && 
+  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('placeholder')
+  ? import.meta.env.VITE_SUPABASE_ANON_KEY 
+  : 'demo-anon-key-for-ui-demonstration-only'
+// Check if real credentials are configured (not demo values)
+const hasValidCredentials = import.meta.env.VITE_SUPABASE_URL && 
+  import.meta.env.VITE_SUPABASE_ANON_KEY && 
+  !import.meta.env.VITE_SUPABASE_URL.includes('placeholder') && 
+  !import.meta.env.VITE_SUPABASE_ANON_KEY.includes('placeholder') &&
+  import.meta.env.VITE_SUPABASE_URL.startsWith('https://') &&
+  import.meta.env.VITE_SUPABASE_ANON_KEY.length > 20
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
@@ -18,7 +25,7 @@ export const signUp = async (email: string, password: string, userType: 'freelan
   if (!hasValidCredentials) {
     return { 
       data: null, 
-      error: new Error('Please configure your Supabase credentials in the .env file. Check the README.md for setup instructions.') 
+      error: new Error('Demo Mode: Authentication features require Supabase configuration. Check README.md for setup instructions.') 
     }
   }
   
@@ -38,7 +45,7 @@ export const signIn = async (email: string, password: string) => {
   if (!hasValidCredentials) {
     return { 
       data: null, 
-      error: new Error('Please configure your Supabase credentials in the .env file. Check the README.md for setup instructions.') 
+      error: new Error('Demo Mode: Authentication features require Supabase configuration. Check README.md for setup instructions.') 
     }
   }
   
@@ -51,7 +58,7 @@ export const signIn = async (email: string, password: string) => {
 
 export const signOut = async () => {
   if (!hasValidCredentials) {
-    return { error: new Error('Supabase not configured') }
+    return { error: new Error('Demo Mode: Authentication features require Supabase configuration.') }
   }
   
   const { error } = await supabase.auth.signOut()
@@ -60,7 +67,7 @@ export const signOut = async () => {
 
 export const getCurrentUser = async () => {
   if (!hasValidCredentials) {
-    return { user: null, error: new Error('Supabase not configured') }
+    return { user: null, error: new Error('Demo Mode: Authentication features require Supabase configuration.') }
   }
   
   const { data: { user }, error } = await supabase.auth.getUser()
