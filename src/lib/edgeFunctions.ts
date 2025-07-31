@@ -40,6 +40,8 @@ export const generateChecklist = async (description: string): Promise<ChecklistR
       }
     }
 
+    console.log('Calling generateChecklist edge function with description:', description.substring(0, 100) + '...')
+
     // Call the edge function
     const { data, error } = await supabase.functions.invoke('generate-checklist', {
       body: { description: description.trim() }
@@ -49,15 +51,25 @@ export const generateChecklist = async (description: string): Promise<ChecklistR
       console.error('Edge function error:', error)
       return {
         success: false,
-        error: error.message || 'Failed to generate checklist'
+        error: error.message || error.details || 'Failed to generate checklist'
       }
     }
+
+    console.log('Edge function response:', data)
 
     // Validate response
     if (!data || typeof data !== 'object') {
       return {
         success: false,
         error: 'Invalid response from checklist service'
+      }
+    }
+
+    // Check if the response indicates an error
+    if (data.success === false) {
+      return {
+        success: false,
+        error: data.error || 'Unknown error from checklist service'
       }
     }
 
