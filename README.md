@@ -33,7 +33,46 @@ The project includes Supabase Edge Functions for AI-powered features:
 
 - `generateChecklist`: Creates detailed project checklists using GPT-4o
 
-These functions are automatically deployed to Supabase and can be called from your frontend.
+**IMPORTANT**: Edge Functions require environment variables to be set as Supabase secrets, not local `.env` files.
+
+#### Setting Up Edge Function Secrets
+
+To configure the OpenAI API key for Edge Functions, you need to use the Supabase CLI:
+
+1. **Install Supabase CLI** (if not already installed):
+   ```bash
+   npm install -g supabase
+   ```
+
+2. **Login to Supabase**:
+   ```bash
+   supabase login
+   ```
+
+3. **Link your project**:
+   ```bash
+   supabase link --project-ref your-project-ref
+   ```
+
+4. **Set the OpenAI API key as a secret**:
+   ```bash
+   supabase secrets set OPENAI_API_KEY="your_openai_api_key_here"
+   ```
+
+5. **Deploy the Edge Function**:
+   ```bash
+   supabase functions deploy generate-checklist
+   ```
+
+**Note**: In WebContainer environments (like this one), you cannot use the Supabase CLI. For production deployment, you'll need to run these commands in a local environment or CI/CD pipeline.
+
+#### Alternative: Supabase Dashboard Method
+
+You can also set secrets through the Supabase Dashboard:
+1. Go to your Supabase project dashboard
+2. Navigate to Edge Functions → Settings
+3. Add `OPENAI_API_KEY` as an environment variable
+4. Redeploy your functions
 
 ### Running the Application
 
