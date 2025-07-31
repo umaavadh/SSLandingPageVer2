@@ -3,14 +3,25 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder') || supabaseAnonKey.includes('placeholder')) {
-  throw new Error('Please configure your Supabase credentials in the .env file. Check the README.md for setup instructions.')
-}
+// Check if credentials are properly configured
+const hasValidCredentials = supabaseUrl && 
+  supabaseAnonKey && 
+  !supabaseUrl.includes('placeholder') && 
+  !supabaseAnonKey.includes('placeholder') &&
+  supabaseUrl.startsWith('https://') &&
+  supabaseAnonKey.length > 20
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // Auth helper functions
 export const signUp = async (email: string, password: string, userType: 'freelancer' | 'client') => {
+  if (!hasValidCredentials) {
+    return { 
+      data: null, 
+      error: new Error('Please configure your Supabase credentials in the .env file. Check the README.md for setup instructions.') 
+    }
+  }
+  
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -24,6 +35,13 @@ export const signUp = async (email: string, password: string, userType: 'freelan
 }
 
 export const signIn = async (email: string, password: string) => {
+  if (!hasValidCredentials) {
+    return { 
+      data: null, 
+      error: new Error('Please configure your Supabase credentials in the .env file. Check the README.md for setup instructions.') 
+    }
+  }
+  
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password
@@ -32,11 +50,19 @@ export const signIn = async (email: string, password: string) => {
 }
 
 export const signOut = async () => {
+  if (!hasValidCredentials) {
+    return { error: new Error('Supabase not configured') }
+  }
+  
   const { error } = await supabase.auth.signOut()
   return { error }
 }
 
 export const getCurrentUser = async () => {
+  if (!hasValidCredentials) {
+    return { user: null, error: new Error('Supabase not configured') }
+  }
+  
   const { data: { user }, error } = await supabase.auth.getUser()
   return { user, error }
 }
