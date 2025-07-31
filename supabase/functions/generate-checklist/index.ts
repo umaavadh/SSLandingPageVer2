@@ -1,8 +1,9 @@
 /*
-  # Generate Checklist Function - Conversational Version
+  # Generate Checklist Function - Conversational Version with Gemini
 
   This function acts as a human consultant, asking follow-up questions
   to gather all necessary information before generating a comprehensive checklist.
+  Now powered by Google's Gemini AI.
 
   ## Input
   - `description`: Initial project description or follow-up response
@@ -62,10 +63,17 @@ You need to gather information about these 14 key parameters:
 8. Delivery timeline/deadline
 9. Distribution platforms (YouTube, social media, website)
 10. Budget considerations
+11. Specific scenes or shots needed
+12. Text/graphics requirements
+13. Revision expectations
 14. File delivery format preferences
+
+CONVERSATION STYLE:
 - Use conversational language, not robotic
 - Show enthusiasm and expertise
 - Acknowledge what they've already told you
+- Ask 2-3 follow-up questions at a time
+- Be specific and practical in your questions
 
 WHEN TO GENERATE CHECKLIST:
 Only generate the final checklist when you have gathered information about at least 10 of the 14 parameters, or when the user explicitly asks for the checklist.
@@ -175,10 +183,10 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    // Get OpenAI API key from environment
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
-    if (!openaiApiKey) {
-      console.error('OpenAI API key not found in environment variables')
+    // Get Gemini API key from environment
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
+    if (!geminiApiKey) {
+      console.error('Gemini API key not found in environment variables')
       
       // TEMPORARY WORKAROUND: Return mock conversational response for WebContainer
       console.log('Using mock conversational response for demonstration purposes')
@@ -380,29 +388,21 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Build conversation history for OpenAI
-    const messages = [
-      {
-        role: 'system',
-        content: CONSULTANT_SYSTEM_PROMPT
-      }
-    ]
+    // Build conversation context for Gemini
+    let conversationContext = CONSULTANT_SYSTEM_PROMPT + "\n\n"
 
     // Add conversation history
     if (requestData.conversationHistory && requestData.conversationHistory.length > 0) {
+      conversationContext += "Previous conversation:\n"
       requestData.conversationHistory.forEach(msg => {
-        messages.push({
-          role: msg.role,
-          content: msg.content
-        })
+        const role = msg.role === 'user' ? 'Human' : 'Assistant'
+        conversationContext += `${role}: ${msg.content}\n`
       })
+      conversationContext += "\n"
     }
 
     // Add current user message
-    messages.push({
-      role: 'user',
-      content: requestData.description.trim()
-    })
+    conversationContext += `Human: ${requestData.description.trim()}\n\n`
 
     // Determine if we should generate final checklist
     const shouldGenerateFinal = requestData.generateFinal || 
@@ -410,52 +410,80 @@ Deno.serve(async (req: Request) => {
 
     if (shouldGenerateFinal) {
       // Generate final checklist
-      messages.push({
-        role: 'system',
-        content: CHECKLIST_GENERATION_PROMPT
-      })
+      conversationContext += CHECKLIST_GENERATION_PROMPT + "\n\n"
+      conversationContext += "Assistant: "
+    } else {
+      conversationContext += "Assistant: "
     }
 
-    // Prepare OpenAI request
-    const openaiRequest = {
-      model: 'gpt-4o',
-      messages: messages,
-      temperature: 0.7,
-      max_tokens: 2000,
-      response_format: { type: 'json_object' }
+    // Prepare Gemini request
+    const geminiRequest = {
+      contents: [
+        {
+          parts: [
+            {
+              text: conversationContext
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 2048,
+        responseMimeType: "application/json"
+      },
+      safetySettings: [
+        {
+          category: "HARM_CATEGORY_HARASSMENT",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE"
+        },
+        {
+          category: "HARM_CATEGORY_HATE_SPEECH",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE"
+        },
+        {
+          category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE"
+        },
+        {
+          category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE"
+        }
+      ]
     }
 
-    // Call OpenAI API
-    console.log('Calling OpenAI API for conversational checklist generation...')
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Call Gemini API
+    console.log('Calling Gemini API for conversational checklist generation...')
+    const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(openaiRequest),
+      body: JSON.stringify(geminiRequest),
     })
 
-    if (!openaiResponse.ok) {
-      const errorText = await openaiResponse.text()
-      console.error('OpenAI API error:', errorText)
+    if (!geminiResponse.ok) {
+      const errorText = await geminiResponse.text()
+      console.error('Gemini API error:', errorText)
       
-      if (openaiResponse.status === 401) {
+      if (geminiResponse.status === 401) {
         return new Response(
           JSON.stringify({ 
             success: false, 
-            error: 'Invalid OpenAI API key' 
+            error: 'Invalid Gemini API key' 
           }),
           {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           }
         )
-      } else if (openaiResponse.status === 429) {
+      } else if (geminiResponse.status === 429) {
         return new Response(
           JSON.stringify({ 
             success: false, 
-            error: 'OpenAI API rate limit exceeded. Please try again later.' 
+            error: 'Gemini API rate limit exceeded. Please try again later.' 
           }),
           {
             status: 429,
@@ -476,10 +504,10 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const openaiData = await openaiResponse.json()
+    const geminiData = await geminiResponse.json()
     
-    if (!openaiData.choices || !openaiData.choices[0] || !openaiData.choices[0].message) {
-      console.error('Invalid OpenAI response structure:', openaiData)
+    if (!geminiData.candidates || !geminiData.candidates[0] || !geminiData.candidates[0].content || !geminiData.candidates[0].content.parts || !geminiData.candidates[0].content.parts[0]) {
+      console.error('Invalid Gemini response structure:', geminiData)
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -495,9 +523,10 @@ Deno.serve(async (req: Request) => {
     // Parse the AI response
     let aiResponse
     try {
-      aiResponse = JSON.parse(openaiData.choices[0].message.content)
+      const responseText = geminiData.candidates[0].content.parts[0].text
+      aiResponse = JSON.parse(responseText)
     } catch (error) {
-      console.error('Failed to parse OpenAI JSON response:', error)
+      console.error('Failed to parse Gemini JSON response:', error)
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -533,7 +562,7 @@ Deno.serve(async (req: Request) => {
       ...aiResponse
     }
 
-    console.log(`Successfully generated ${response.isComplete ? 'final checklist' : 'conversational response'}`)
+    console.log(`Successfully generated ${response.isComplete ? 'final checklist' : 'conversational response'} using Gemini`)
 
     return new Response(
       JSON.stringify(response),
