@@ -47,7 +47,6 @@ const ClientDashboard: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedChecklist, setGeneratedChecklist] = useState<ChecklistItem[]>([]);
   const [conversationError, setConversationError] = useState('');
-  const [showChecklist, setShowChecklist] = useState(false);
   
   // Conversation state
   const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([]);
@@ -55,6 +54,21 @@ const ClientDashboard: React.FC = () => {
   const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([]);
   const [isConversationMode, setIsConversationMode] = useState(false);
   const [conversationComplete, setConversationComplete] = useState(false);
+  const [consultationId, setConsultationId] = useState<string>('');
+  
+  // Project creation form state
+  const [showProjectForm, setShowProjectForm] = useState(false);
+  const [projectFormData, setProjectFormData] = useState({
+    projectName: '',
+    freelancerId: '',
+    completionDate: '',
+    projectAmount: ''
+  });
+  const [projectFormErrors, setProjectFormErrors] = useState({
+    projectName: '',
+    freelancerId: '',
+    completionDate: ''
+  });
 
   const countryCodes = [
     { code: '+91', country: 'India', flag: '🇮🇳' },
@@ -267,14 +281,19 @@ const ClientDashboard: React.FC = () => {
         if (result.isComplete && result.checklist) {
           // Conversation complete, show final checklist
           setGeneratedChecklist(result.checklist);
-          setShowChecklist(true);
           setConversationComplete(true);
           setIsConversationMode(false);
+          
+          // Save consultation with final checklist
+          await saveConsultationWithChecklist(result);
         } else {
           // Continue conversation
           setCurrentResponse(result.response || '');
           setFollowUpQuestions(result.followUpQuestions || []);
           setConversationHistory(result.conversationHistory || []);
+          
+          // Save consultation progress
+          await saveConsultationProgress(projectDescription, result.conversationHistory || []);
         }
         setConversationError('');
       } else {
@@ -307,14 +326,19 @@ const ClientDashboard: React.FC = () => {
         if (result.isComplete && result.checklist) {
           // Conversation complete, show final checklist
           setGeneratedChecklist(result.checklist);
-          setShowChecklist(true);
           setConversationComplete(true);
           setIsConversationMode(false);
+          
+          // Save consultation with final checklist
+          await saveConsultationWithChecklist(result);
         } else {
           // Continue conversation
           setCurrentResponse(result.response || '');
           setFollowUpQuestions(result.followUpQuestions || []);
           setConversationHistory(result.conversationHistory || []);
+          
+          // Save consultation progress
+          await saveConsultationProgress(response, result.conversationHistory || []);
         }
         setConversationError('');
       } else {
@@ -342,10 +366,11 @@ const ClientDashboard: React.FC = () => {
 
       if (result.success && result.checklist) {
         setGeneratedChecklist(result.checklist);
-        setShowChecklist(true);
         setConversationComplete(true);
         setIsConversationMode(false);
-        setConversationError('');
+        
+        // Save consultation with final checklist
+        await saveConsultationWithChecklist(result);
       } else {
         setConversationError(result.error || 'Failed to generate final checklist');
       }
@@ -365,60 +390,157 @@ const ClientDashboard: React.FC = () => {
     setFollowUpQuestions([]);
     setIsConversationMode(false);
     setConversationComplete(false);
-    setShowChecklist(false);
     setGeneratedChecklist([]);
     setConversationError('');
+    setConsultationId('');
+    setShowProjectForm(false);
+    setProjectFormData({
+      projectName: '',
+      freelancerId: '',
+      completionDate: '',
+      projectAmount: ''
+    });
+    setProjectFormErrors({
+      projectName: '',
+      freelancerId: '',
+      completionDate: ''
+    });
   };
 
-  // Handle project creation
-  const handleCreateProject = async () => {
-    if (generatedChecklist.length === 0) {
-      setConversationError('No checklist available to create project')
-      return
+  // Save consultation progress to database
+  const saveConsultationProgress = async (description: string, history: ConversationMessage[]) => {
+    try {
+      const { saveConsultationProgress } = await import('../lib/supabase');
+      await saveConsultationProgress(description, history);
+    } catch (error) {
+      console.error('Error saving consultation progress:', error);
+    }
+  };
+
+  // Save consultation with final checklist
+  const saveConsultationWithChecklist = async (result: any) => {
+    try {
+      const { saveConsultationProgress } = await import('../lib/supabase');
+      const { data } = await saveConsultationProgress(
+        projectDescription,
+        result.conversationHistory || [],
+        result,
+        true
+      );
+      
+      if (data?.consultation_id) {
+        setConsultationId(data.consultation_id);
+        setShowProjectForm(true);
+      }
+    } catch (error) {
+      console.error('Error saving consultation with checklist:', error);
+      setConversationError('Failed to save consultation data');
+    }
+  };
+
+  // Get tomorrow's date in YYYY-MM-DD format
+  const getTomorrowDate = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  };
+
+  // Validate project form
+  const validateProjectForm = () => {
+    const newErrors = {
+      projectName: '',
+      freelancerId: '',
+      completionDate: ''
+    };
+
+    if (!projectFormData.projectName.trim()) {
+      newErrors.projectName = 'Project name is required';
+    }
+
+    if (projectFormData.freelancerId && !/^F\d{9}$/.test(projectFormData.freelancerId)) {
+      newErrors.freelancerId = 'Freelancer ID must be in format F123456789';
+    }
+
+    if (!projectFormData.completionDate) {
+      newErrors.completionDate = 'Completion date is required';
+    } else {
+      const selectedDate = new Date(projectFormData.completionDate);
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      if (selectedDate < tomorrow) {
+        newErrors.completionDate = 'Completion date must be at least tomorrow';
+      }
+    }
+
+    setProjectFormErrors(newErrors);
+    return !Object.values(newErrors).some(error => error !== '');
+  };
+
+  // Handle project creation from consultation
+  const handleCreateProjectFromConsultation = async () => {
+    if (!validateProjectForm()) {
+      return;
     }
 
     try {
-      const { createProject, getProjectStats } = await import('../lib/supabase')
+      const { createProjectFromConsultation } = await import('../lib/supabase');
       
-      const projectData = {
-        project_name: `Video Project - ${new Date().toLocaleDateString()}`,
-        description: projectDescription,
-        category: 'Video Production',
-        status: 'draft',
-        completion_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 days from now
-        amount: null // Will be set when freelancer is assigned
-      }
-      
-      const deliverables = generatedChecklist.map(item => ({
-        requirement: item.requirement,
-        description: item.description,
-        category: item.category,
-        priority: item.priority,
-        verifiable: item.verifiable
-      }))
-      
-      const { data, error } = await createProject(projectData, deliverables)
+      const { data, error } = await createProjectFromConsultation(
+        consultationId,
+        projectFormData.projectName,
+        projectFormData.freelancerId || undefined,
+        projectFormData.completionDate,
+        projectFormData.projectAmount ? parseFloat(projectFormData.projectAmount) : undefined
+      );
       
       if (error) {
-        console.error('Error creating project:', error)
-        setConversationError('Failed to create project. Please try again.')
-        return
+        console.error('Error creating project:', error);
+        setConversationError('Failed to create project. Please try again.');
+        return;
       }
       
       if (data) {
         // Reset form and switch to projects tab
-        handleResetConversation()
-        setActiveTab('projects')
+        handleResetConversation();
+        setActiveTab('projects');
         
-        // Show success message
-        setConversationError('')
-        // You could add a success state here if needed
+        // Clear any errors
+        setConversationError('');
       }
     } catch (error) {
-      console.error('Error creating project:', error)
-      setConversationError('An unexpected error occurred while creating the project')
+      console.error('Error creating project:', error);
+      setConversationError('An unexpected error occurred while creating the project');
     }
-  }
+  };
+
+  // Handle project form input changes
+  const handleProjectFormChange = (field: string, value: string) => {
+    setProjectFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Clear error when user starts typing
+    if (projectFormErrors[field as keyof typeof projectFormErrors]) {
+      setProjectFormErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  // Format Freelancer ID input
+  const handleFreelancerIdChange = (value: string) => {
+    // Remove any non-digit characters except F at the beginning
+    let formatted = value.replace(/[^F\d]/g, '');
+    
+    // Ensure it starts with F
+    if (!formatted.startsWith('F') && formatted.length > 0) {
+      formatted = 'F' + formatted.replace(/F/g, '');
+    }
+    
+    // Limit to F + 9 digits
+    if (formatted.length > 10) {
+      formatted = formatted.substring(0, 10);
+    }
+    
+    handleProjectFormChange('freelancerId', formatted);
+  };
 
   // Get priority color
   const getPriorityColor = (priority: string) => {
@@ -751,14 +873,14 @@ const ClientDashboard: React.FC = () => {
       </div>
 
       {/* Generated Checklist Display */}
-      {showChecklist && generatedChecklist.length > 0 && (
+      {conversationComplete && generatedChecklist.length > 0 && !showProjectForm && (
         <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
           <div className="mb-6 sm:mb-8">
             <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">
               AI-Generated Project Checklist
             </h3>
             <p className="text-sm sm:text-base text-gray-300">
-              Review and customize this checklist before creating your project. Each item will be verified by our AI system.
+              Review this checklist and proceed to create your project. Each item will be verified by our AI system.
             </p>
           </div>
 
@@ -831,13 +953,155 @@ const ClientDashboard: React.FC = () => {
               <span>Start Over</span>
             </button>
             <button
+              onClick={() => setShowProjectForm(true)}
               className="flex items-center justify-center space-x-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
-              onClick={handleCreateProject}
             >
               <CheckCircle className="h-4 w-4" />
-              <span>Create Project with This Checklist</span>
+              <span>Proceed to Create Project</span>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Project Creation Form */}
+      {showProjectForm && generatedChecklist.length > 0 && (
+        <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
+          <div className="mb-6 sm:mb-8">
+            <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">
+              Create Your Project
+            </h3>
+            <p className="text-sm sm:text-base text-gray-300">
+              Fill in the project details to create your project with the AI-generated checklist.
+            </p>
+          </div>
+
+          <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); handleCreateProjectFromConsultation(); }}>
+            {/* Project Name */}
+            <div>
+              <label htmlFor="project-name" className="block text-gray-300 text-sm font-semibold mb-2">
+                Project Name *
+              </label>
+              <input
+                id="project-name"
+                type="text"
+                value={projectFormData.projectName}
+                onChange={(e) => handleProjectFormChange('projectName', e.target.value)}
+                placeholder="Enter your project name"
+                className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
+                  projectFormErrors.projectName 
+                    ? 'border-red-500 focus:border-red-400' 
+                    : 'border-gray-600 focus:border-purple-400'
+                }`}
+              />
+              {projectFormErrors.projectName && (
+                <p className="text-red-400 text-xs sm:text-sm mt-1">{projectFormErrors.projectName}</p>
+              )}
+            </div>
+
+            {/* Freelancer ID (Optional) */}
+            <div>
+              <label htmlFor="freelancer-id" className="block text-gray-300 text-sm font-semibold mb-2">
+                Freelancer ID (Optional)
+              </label>
+              <input
+                id="freelancer-id"
+                type="text"
+                value={projectFormData.freelancerId}
+                onChange={(e) => handleFreelancerIdChange(e.target.value)}
+                placeholder="F123456789"
+                maxLength={10}
+                className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
+                  projectFormErrors.freelancerId 
+                    ? 'border-red-500 focus:border-red-400' 
+                    : 'border-gray-600 focus:border-purple-400'
+                }`}
+              />
+              <p className="text-gray-400 text-xs sm:text-sm mt-1">
+                Leave empty to assign freelancer later
+              </p>
+              {projectFormErrors.freelancerId && (
+                <p className="text-red-400 text-xs sm:text-sm mt-1">{projectFormErrors.freelancerId}</p>
+              )}
+            </div>
+
+            {/* Completion Date */}
+            <div>
+              <label htmlFor="completion-date" className="block text-gray-300 text-sm font-semibold mb-2">
+                Desired Completion Date *
+              </label>
+              <input
+                id="completion-date"
+                type="date"
+                value={projectFormData.completionDate}
+                onChange={(e) => handleProjectFormChange('completionDate', e.target.value)}
+                min={getTomorrowDate()}
+                className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white text-sm sm:text-base ${
+                  projectFormErrors.completionDate 
+                    ? 'border-red-500 focus:border-red-400' 
+                    : 'border-gray-600 focus:border-purple-400'
+                }`}
+              />
+              {projectFormErrors.completionDate && (
+                <p className="text-red-400 text-xs sm:text-sm mt-1">{projectFormErrors.completionDate}</p>
+              )}
+            </div>
+
+            {/* Project Amount (Optional) */}
+            <div>
+              <label htmlFor="project-amount" className="block text-gray-300 text-sm font-semibold mb-2">
+                Project Budget (Optional)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">₹</span>
+                <input
+                  id="project-amount"
+                  type="number"
+                  value={projectFormData.projectAmount}
+                  onChange={(e) => handleProjectFormChange('projectAmount', e.target.value)}
+                  placeholder="0"
+                  min="0"
+                  step="100"
+                  className="w-full pl-8 pr-4 py-3 border-2 border-gray-600 rounded-lg focus:outline-none focus:border-purple-400 bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base"
+                />
+              </div>
+              <p className="text-gray-400 text-xs sm:text-sm mt-1">
+                Leave empty to negotiate with freelancer
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end space-y-3 sm:space-y-0 sm:space-x-4 pt-6 border-t border-gray-700">
+              <button
+                type="button"
+                onClick={() => setShowProjectForm(false)}
+                className="flex items-center justify-center space-x-2 px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
+              >
+                <X className="h-4 w-4" />
+                <span>Back to Checklist</span>
+              </button>
+              <button
+                type="submit"
+                disabled={isGenerating}
+                className={`flex items-center justify-center space-x-2 px-6 py-3 rounded-lg transition-colors focus:outline-none focus:ring-2 ${
+                  isGenerating
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-400'
+                }`}
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader className="h-4 w-4 animate-spin" />
+                    <span>Creating Project...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Create Project</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
