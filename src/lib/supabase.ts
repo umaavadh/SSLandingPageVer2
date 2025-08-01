@@ -173,3 +173,56 @@ export const getProjectById = async (projectId: string) => {
 
   return { data, error }
 }
+
+// New consultation and project creation functions
+export const saveConsultationProgress = async (
+  projectDescription: string,
+  conversationHistory: any[],
+  aiResponse?: any,
+  checklistGenerated: boolean = false
+) => {
+  const { data, error } = await supabase.rpc('save_consultation_progress', {
+    project_description: projectDescription,
+    conversation_history: conversationHistory,
+    ai_response: aiResponse,
+    checklist_generated: checklistGenerated
+  })
+
+  return { data, error }
+}
+
+export const createProjectFromConsultation = async (
+  consultationId: string,
+  projectName: string,
+  freelancerId?: string,
+  completionDate?: string,
+  projectAmount?: number
+) => {
+  const { data, error } = await supabase.rpc('create_project_from_ai_consultation', {
+    consultation_id: consultationId,
+    project_name: projectName,
+    freelancer_id_input: freelancerId,
+    completion_date: completionDate,
+    project_amount: projectAmount
+  })
+
+  return { data, error }
+}
+
+export const getProjectWithFullDetails = async (projectId: string) => {
+  const { data, error } = await supabase.rpc('get_project_with_full_details', {
+    project_id: projectId
+  })
+
+  return { data, error }
+}
+
+export const getUserConsultations = async () => {
+  const { data, error } = await supabase.rpc('get_user_consultations')
+  return { data, error }
+}
+
+export const getEnhancedProjectStats = async () => {
+  const { data, error } = await supabase.rpc('get_enhanced_project_stats')
+  return { data, error }
+}
