@@ -378,13 +378,15 @@ const ClientDashboard: React.FC = () => {
     }
 
     try {
-      const { createProject } = await import('../lib/supabase')
+      const { createProject, getProjectStats } = await import('../lib/supabase')
       
       const projectData = {
         project_name: `Video Project - ${new Date().toLocaleDateString()}`,
         description: projectDescription,
         category: 'Video Production',
-        status: 'draft'
+        status: 'draft',
+        completion_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 days from now
+        amount: null // Will be set when freelancer is assigned
       }
       
       const deliverables = generatedChecklist.map(item => ({
@@ -407,7 +409,10 @@ const ClientDashboard: React.FC = () => {
         // Reset form and switch to projects tab
         handleResetConversation()
         setActiveTab('projects')
-        // You might want to show a success message here
+        
+        // Show success message
+        setConversationError('')
+        // You could add a success state here if needed
       }
     } catch (error) {
       console.error('Error creating project:', error)
@@ -858,20 +863,82 @@ const ClientDashboard: React.FC = () => {
           </button>
         </div>
 
-        {/* Projects List - This will be populated with real data */}
-        <div className="text-center py-12">
-          <div className="flex flex-col items-center space-y-4">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-700 rounded-full flex items-center justify-center">
-              <Briefcase className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" />
+        {/* Project Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+          <div className="bg-gray-700 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-purple-400">0</div>
+            <div className="text-sm text-gray-300">Total Projects</div>
+          </div>
+          <div className="bg-gray-700 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-blue-400">0</div>
+            <div className="text-sm text-gray-300">Active Projects</div>
+          </div>
+          <div className="bg-gray-700 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-green-400">0</div>
+            <div className="text-sm text-gray-300">Completed</div>
+          </div>
+          <div className="bg-gray-700 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-yellow-400">₹0</div>
+            <div className="text-sm text-gray-300">Total Spent</div>
+          </div>
+        </div>
+
+        {/* Projects Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-600">
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Project Name</th>
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Status</th>
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Freelancer</th>
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Due Date</th>
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Amount</th>
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Empty state */}
+              <tr>
+                <td colSpan={6} className="text-center py-12">
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-700 rounded-full flex items-center justify-center">
+                      <Briefcase className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-lg sm:text-xl font-semibold text-white">
+                        No Projects Yet
+                      </h3>
+                      <p className="text-sm sm:text-base text-gray-400 max-w-md">
+                        Create your first project to start working with freelancers. 
+                        Our AI will help you define clear requirements and manage deliverables.
+                      </p>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Status Legend */}
+        <div className="mt-6 p-4 bg-gray-700 rounded-lg">
+          <h4 className="text-sm font-semibold text-gray-300 mb-3">Project Status:</h4>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs sm:text-sm">
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
+              <span className="text-gray-300">Draft</span>
             </div>
-            <div className="space-y-2">
-              <h3 className="text-lg sm:text-xl font-semibold text-white">
-                No Projects Yet
-              </h3>
-              <p className="text-sm sm:text-base text-gray-400 max-w-md">
-                Create your first project to start working with freelancers. 
-                Our AI will help you define clear requirements and manage deliverables.
-              </p>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+              <span className="text-gray-300">Active</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+              <span className="text-gray-300">Completed</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+              <span className="text-gray-300">Cancelled</span>
             </div>
           </div>
         </div>

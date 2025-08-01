@@ -84,30 +84,13 @@ export const createProject = async (projectData: any, deliverables: any[]) => {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { data: null, error: new Error('No authenticated user') }
 
-  // Create project
-  const { data: project, error: projectError } = await supabase
-    .from('projects')
-    .insert({ client_id: user.id, ...projectData })
-    .select()
-    .single()
+  // Use the database function to create project with deliverables
+  const { data, error } = await supabase.rpc('create_project_with_deliverables', {
+    project_data: projectData,
+    deliverables_data: deliverables
+  })
 
-  if (projectError) return { data: null, error: projectError }
-
-  // Create deliverables
-  if (deliverables.length > 0) {
-    const deliverableData = deliverables.map(deliverable => ({
-      project_id: project.id,
-      ...deliverable
-    }))
-
-    const { error: deliverablesError } = await supabase
-      .from('project_deliverables')
-      .insert(deliverableData)
-
-    if (deliverablesError) return { data: null, error: deliverablesError }
-  }
-
-  return { data: project, error: null }
+  return { data, error }
 }
 
 export const getUserProjects = async () => {
@@ -132,6 +115,61 @@ export const getProjectDeliverables = async (projectId: string) => {
     .select('*')
     .eq('project_id', projectId)
     .order('created_at', { ascending: true })
+
+  return { data, error }
+}
+
+// New project management functions
+export const updateProjectStatus = async (projectId: string, status: string) => {
+  const { data, error } = await supabase.rpc('update_project_status', {
+    project_id: projectId,
+    new_status: status
+  })
+
+  return { data, error }
+}
+
+export const assignFreelancerToProject = async (projectId: string, freelancerId: string) => {
+  const { data, error } = await supabase.rpc('assign_freelancer_to_project', {
+    project_id: projectId,
+    freelancer_user_id: freelancerId
+  })
+
+  return { data, error }
+}
+
+export const markDeliverableCompleted = async (deliverableId: string, isCompleted: boolean = true) => {
+  const { data, error } = await supabase.rpc('mark_deliverable_completed', {
+    deliverable_id: deliverableId,
+    is_completed: isCompleted
+  })
+
+  return { data, error }
+}
+
+export const getProjectStats = async () => {
+  const { data, error } = await supabase.rpc('get_project_stats')
+  return { data, error }
+}
+
+export const getProjectById = async (projectId: string) => {
+  const { data, error } = await supabase
+    .from('projects')
+    .select(`
+      *,
+      project_deliverables (*),
+      client:user_profiles!projects_client_id_fkey (
+        full_name,
+        company_name,
+        client_id
+      ),
+      freelancer:user_profiles!projects_freelancer_id_fkey (
+        full_name,
+        freelancer_id
+      )
+    `)
+    .eq('id', projectId)
+    .single()
 
   return { data, error }
 }
