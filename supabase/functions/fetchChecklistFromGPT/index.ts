@@ -21,89 +21,92 @@ serve(async (req) => {
     }
 
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-    const assistantId = Deno.env.get('OPENAI_ASSISTANT_ID');
 
-    if (!openaiApiKey || !assistantId) {
+    if (!openaiApiKey) {
       return new Response(
-        JSON.stringify({ error: 'OpenAI API key or Assistant ID not configured' }),
+        JSON.stringify({ error: 'OpenAI API key not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // 1. Create thread
-    const threadRes = await fetch('https://api.openai.com/v1/threads', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json',
-      }
-    });
-
-    const thread = await threadRes.json();
-    const threadId = thread.id;
-
-    // 2. Add all messages to thread
-    for (const msg of messages) {
-      if (msg.role && msg.content) {
-        await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openaiApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            role: msg.role,
-            content: msg.content
-          })
-        });
-      }
-    }
-
-    // 3. Run assistant
-    const runRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
+    // Call OpenAI Chat Completions API
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openaiApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        assistant_id: assistantId
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a helpful project management assistant for SecureServe, a freelance platform. Your job is to help clients define their video production projects by asking targeted questions to gather 14 key parameters.
+
+Key parameters to collect:
+1. Project type/category
+2. Target audience
+3. Video duration/length
+4. Video style/format
+5. Budget range
+6. Timeline/deadline
+7. Deliverables format
+8. Revision rounds
+9. Script requirements
+10. Voiceover needs
+11. Music/audio requirements
+12. Branding guidelines
+13. Distribution channels
+14. Success metrics
+
+Guidelines:
+- Ask 1-2 focused questions at a time
+- Be conversational and friendly
+- Provide examples when helpful
+- Once you have all 14 parameters, let the user know they can generate their final checklist
+- Keep responses concise but informative
+
+Always end your response with a JSON object indicating how many parameters you've collected so far:
+\`\`\`json
+{"parameters_collected": X}
+\`\`\``
+          },
+          ...messages
+        ],
+        temperature: 1,
+        top_p: 1,
+        max_tokens: 2048,
+        presence_penalty: 0,
+        frequency_penalty: 0
       })
     });
 
-    const run = await runRes.json();
-    const runId = run.id;
-
-    // 4. Poll for completion
-    let status = run.status;
-    let retries = 0;
-    while (status !== 'completed' && retries < 15) {
-      await new Promise(r => setTimeout(r, 1000));
-      const statusRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
-        headers: { 'Authorization': `Bearer ${openaiApiKey}` }
-      });
-      const runStatus = await statusRes.json();
-      status = runStatus.status;
-      retries++;
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} ${errorText}`);
     }
 
-    if (status !== 'completed') {
-      return new Response(
-        JSON.stringify({ error: 'Assistant did not respond in time' }),
-        { status: 504, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const data = await response.json();
+    const assistantReply = data.choices[0].message.content;
+
+    // Extract parameter count from the response
+    let parametersCollected = 0;
+    try {
+      const jsonMatch = assistantReply.match(/```json\s*\n(.*?)\n```/s);
+      if (jsonMatch) {
+        const jsonData = JSON.parse(jsonMatch[1]);
+        parametersCollected = jsonData.parameters_collected || 0;
+      }
+    } catch (e) {
+      // If parsing fails, default to 0
+      parametersCollected = 0;
     }
-
-    // 5. Get latest assistant message
-    const messagesRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-      headers: { 'Authorization': `Bearer ${openaiApiKey}` }
-    });
-    const messagesData = await messagesRes.json();
-
-    const lastAssistantMessage = messagesData.data.find(m => m.role === 'assistant');
 
     return new Response(
-      JSON.stringify({ reply: lastAssistantMessage?.content?.[0]?.text?.value || 'No response' }),
+      JSON.stringify({ 
+        reply: assistantReply,
+        parametersCollected: parametersCollected
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
