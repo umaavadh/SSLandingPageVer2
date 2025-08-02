@@ -126,6 +126,8 @@ export const saveProjectConversation = async (
       messages: messages,
       parameters_collected: parametersCollected,
       status: status
+    }, {
+      onConflict: 'user_id,project_id'
     })
     .select()
     .single()
