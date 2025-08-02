@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { User, Briefcase, CreditCard, MessageSquare, Shield, Edit3, Save, X, CheckCircle, Plus, Send, Bot, Clock, AlertCircle, FileText, Target, Users, DollarSign, Palette, Calendar, Zap, Monitor, Settings, Copy, RefreshCw, Download } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getCurrentUser, signOut } from '../lib/supabase';
+import ChecklistDisplay from '../components/ChecklistDisplay';
+import SignatureBox from '../components/SignatureBox';
+import ConfirmationBanner from '../components/ConfirmationBanner';
 
 interface ProfileData {
   fullName: string;
@@ -20,13 +23,17 @@ interface Message {
   timestamp: Date;
 }
 
-interface ChecklistItem {
+interface Parameter {
   id: string;
-  category: string;
-  requirement: string;
-  description: string;
-  priority: 'high' | 'medium' | 'low';
-  verifiable: boolean;
+  label: string;
+  value: string;
+  category: 'content' | 'technical' | 'business' | 'timeline';
+}
+
+interface Signature {
+  name: string;
+  date: string;
+  timestamp: Date | null;
 }
 
 const ClientDashboard: React.FC = () => {
@@ -62,9 +69,24 @@ const ClientDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [collectedParameters, setCollectedParameters] = useState(0);
-  const [generatedChecklist, setGeneratedChecklist] = useState<ChecklistItem[]>([]);
+  const [extractedParameters, setExtractedParameters] = useState<Parameter[]>([]);
   const [showChecklist, setShowChecklist] = useState(false);
   const [isGeneratingChecklist, setIsGeneratingChecklist] = useState(false);
+  
+  // Digital Agreement State
+  const [clientSignature, setClientSignature] = useState<Signature>({
+    name: '',
+    date: '',
+    timestamp: null
+  });
+  const [freelancerSignature, setFreelancerSignature] = useState<Signature>({
+    name: '',
+    date: '',
+    timestamp: null
+  });
+  const [isAgreementLocked, setIsAgreementLocked] = useState(false);
+  const [agreementTimestamp, setAgreementTimestamp] = useState<Date | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
 
   const countryCodes = [
     { code: '+91', country: 'India', flag: '🇮🇳' },
@@ -353,69 +375,95 @@ const ClientDashboard: React.FC = () => {
     setError(null);
 
     try {
-      // Create a summary message for checklist generation
-      const summaryMessage: Message = {
-        id: 'summary',
-        role: 'user',
-        content: 'Please generate a detailed, structured checklist based on our conversation. Include specific requirements, deliverables, and verification criteria.'
-      };
-
-      const checklistConversation = [...conversation, summaryMessage];
-      const { reply } = await fetchChecklistFromGPT(checklistConversation);
-
-      // Parse the response into checklist items (simplified parsing)
-      const mockChecklist: ChecklistItem[] = [
+      // Extract parameters from conversation (simplified extraction)
+      const mockParameters: Parameter[] = [
         {
           id: '1',
-          category: 'Video Specifications',
-          requirement: 'Video Format and Quality',
-          description: 'Deliver video in MP4 format, 1080p HD resolution, 30fps',
-          priority: 'high',
-          verifiable: true
+          label: 'Project Type',
+          value: 'Animation-based reel video',
+          category: 'content'
         },
         {
           id: '2',
-          category: 'Content Requirements',
-          requirement: 'Duration and Pacing',
-          description: 'Video duration should be 60-90 seconds with engaging pacing',
-          priority: 'high',
-          verifiable: true
+          label: 'Target Audience',
+          value: 'Social media users, potential clients',
+          category: 'content'
         },
         {
           id: '3',
-          category: 'Brand Guidelines',
-          requirement: 'Brand Asset Integration',
-          description: 'Include company logo, use brand colors and fonts consistently',
-          priority: 'medium',
-          verifiable: true
+          label: 'Video Duration',
+          value: '15-30 seconds (Instagram Reel format)',
+          category: 'technical'
         },
         {
           id: '4',
-          category: 'Audio Requirements',
-          requirement: 'Audio Quality and Music',
-          description: 'Clear audio, background music, professional voiceover if needed',
-          priority: 'high',
-          verifiable: true
+          label: 'Animation Style',
+          value: '2D motion graphics with modern design',
+          category: 'technical'
         },
         {
           id: '5',
-          category: 'Delivery Format',
-          requirement: 'Multiple Platform Versions',
-          description: 'Provide versions optimized for social media, website, and presentations',
-          priority: 'medium',
-          verifiable: true
+          label: 'Budget Range',
+          value: '$500 - $1000',
+          category: 'business'
         },
         {
           id: '6',
-          category: 'Timeline',
-          requirement: 'Project Milestones',
-          description: 'First draft within 5 days, final version within 10 days',
-          priority: 'high',
-          verifiable: true
+          label: 'Timeline',
+          value: '7 days for completion',
+          category: 'timeline'
+        },
+        {
+          id: '7',
+          label: 'Deliverable Format',
+          value: 'MP4, 1080x1920 (9:16 aspect ratio)',
+          category: 'technical'
+        },
+        {
+          id: '8',
+          label: 'Revision Rounds',
+          value: '2 rounds of revisions included',
+          category: 'business'
+        },
+        {
+          id: '9',
+          label: 'Music Requirements',
+          value: 'Trending background music, royalty-free',
+          category: 'content'
+        },
+        {
+          id: '10',
+          label: 'Brand Guidelines',
+          value: 'Company logo and brand colors to be included',
+          category: 'content'
+        },
+        {
+          id: '11',
+          label: 'Distribution Channels',
+          value: 'Instagram, Facebook, LinkedIn',
+          category: 'business'
+        },
+        {
+          id: '12',
+          label: 'Success Metrics',
+          value: 'Engagement rate, view completion rate',
+          category: 'business'
+        },
+        {
+          id: '13',
+          label: 'Script Requirements',
+          value: 'Client to provide script and key messaging',
+          category: 'content'
+        },
+        {
+          id: '14',
+          label: 'Voiceover Needs',
+          value: 'No voiceover required, text overlays only',
+          category: 'technical'
         }
       ];
 
-      setGeneratedChecklist(mockChecklist);
+      setExtractedParameters(mockParameters);
       setShowChecklist(true);
 
     } catch (err) {
@@ -424,6 +472,45 @@ const ClientDashboard: React.FC = () => {
     } finally {
       setIsGeneratingChecklist(false);
     }
+  };
+
+  // Handle agreement confirmation
+  const handleConfirmAgreement = async () => {
+    if (!clientSignature.timestamp || !freelancerSignature.timestamp) {
+      setError('Both parties must sign the agreement before it can be locked.');
+      return;
+    }
+
+    try {
+      // Generate project ID
+      const newProjectId = `P${Date.now().toString().slice(-8)}`;
+      
+      // In a real implementation, you would save to Supabase here
+      // const { data, error } = await supabase
+      //   .from('finalized_projects')
+      //   .insert({
+      //     project_id: newProjectId,
+      //     client_id: profileData.clientId,
+      //     parameters: extractedParameters,
+      //     client_signature: clientSignature,
+      //     freelancer_signature: freelancerSignature,
+      //     locked_at: new Date().toISOString()
+      //   });
+
+      setProjectId(newProjectId);
+      setIsAgreementLocked(true);
+      setAgreementTimestamp(new Date());
+      
+    } catch (err) {
+      setError('Failed to finalize agreement. Please try again.');
+      console.error('Error finalizing agreement:', err);
+    }
+  };
+
+  // Handle download agreement
+  const handleDownloadAgreement = () => {
+    // In a real implementation, this would generate and download a PDF
+    alert('Agreement download feature coming soon!');
   };
 
   // Initialize conversation
@@ -696,16 +783,24 @@ const ClientDashboard: React.FC = () => {
   const renderCreateProjectContent = () => (
     <div className="space-y-6 sm:space-y-8">
       {/* Show Checklist if Generated */}
-      {showChecklist && generatedChecklist.length > 0 && (
+      {showChecklist && extractedParameters.length > 0 && (
         <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Generated Project Checklist</h2>
-              <p className="text-sm sm:text-base text-gray-300">
-                Detailed requirements and deliverables for your project
-              </p>
-            </div>
-            <div className="flex space-x-3">
+          {/* Confirmation Banner */}
+          <ConfirmationBanner
+            isLocked={isAgreementLocked}
+            timestamp={agreementTimestamp}
+            projectId={projectId || undefined}
+            onDownload={handleDownloadAgreement}
+          />
+
+          {!isAgreementLocked && (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Project Agreement</h2>
+                <p className="text-sm sm:text-base text-gray-300">
+                  Review parameters and obtain digital signatures to finalize
+                </p>
+              </div>
               <button
                 onClick={() => setShowChecklist(false)}
                 className="flex items-center space-x-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
@@ -713,97 +808,61 @@ const ClientDashboard: React.FC = () => {
                 <RefreshCw className="h-4 w-4" />
                 <span>Back to Chat</span>
               </button>
-              <button
-                onClick={() => {
-                  // This would save the project
-                  alert('Project creation feature coming soon!');
-                }}
-                className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-400"
-              >
-                <Download className="h-4 w-4" />
-                <span>Create Project</span>
-              </button>
             </div>
+          )}
+
+          {/* Checklist Display */}
+          <div className="mb-8">
+            <ChecklistDisplay parameters={extractedParameters} />
           </div>
 
-          {/* Checklist Grid */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {generatedChecklist.map((item) => {
-              const getPriorityColor = (priority: string) => {
-                switch (priority) {
-                  case 'high': return 'border-red-500/30 bg-red-900/10';
-                  case 'medium': return 'border-yellow-500/30 bg-yellow-900/10';
-                  case 'low': return 'border-green-500/30 bg-green-900/10';
-                  default: return 'border-gray-500/30 bg-gray-900/10';
-                }
-              };
-
-              const getPriorityIcon = (priority: string) => {
-                switch (priority) {
-                  case 'high': return <AlertCircle className="h-4 w-4 text-red-400" />;
-                  case 'medium': return <Clock className="h-4 w-4 text-yellow-400" />;
-                  case 'low': return <CheckCircle className="h-4 w-4 text-green-400" />;
-                  default: return <FileText className="h-4 w-4 text-gray-400" />;
-                }
-              };
-
-              return (
-                <div
-                  key={item.id}
-                  className={`p-4 rounded-xl border transition-all duration-200 hover:scale-105 ${getPriorityColor(item.priority)}`}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center space-x-2">
-                      {getPriorityIcon(item.priority)}
-                      <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">
-                        {item.category}
-                      </span>
-                    </div>
-                    {item.verifiable && (
-                      <div className="flex items-center space-x-1">
-                        <Shield className="h-3 w-3 text-purple-400" />
-                        <span className="text-xs text-purple-400">AI Verifiable</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <h3 className="text-sm font-semibold text-white mb-2">
-                    {item.requirement}
-                  </h3>
-                  
-                  <p className="text-xs text-gray-300 leading-relaxed">
-                    {item.description}
-                  </p>
-                  
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                      item.priority === 'high' ? 'bg-red-900/20 text-red-400' :
-                      item.priority === 'medium' ? 'bg-yellow-900/20 text-yellow-400' :
-                      'bg-green-900/20 text-green-400'
-                    }`}>
-                      {item.priority.toUpperCase()} PRIORITY
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Checklist Summary */}
-          <div className="mt-6 p-4 bg-purple-900/20 border border-purple-500/30 rounded-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-purple-400 mb-1">Checklist Complete!</h3>
-                <p className="text-sm text-purple-300">
-                  {generatedChecklist.length} requirements defined • {generatedChecklist.filter(item => item.verifiable).length} AI-verifiable items
+          {/* Digital Agreement Section */}
+          {!isAgreementLocked && (
+            <div className="space-y-6">
+              <div className="border-t border-gray-600 pt-6">
+                <h3 className="text-lg font-semibold text-white mb-4 flex items-center space-x-2">
+                  <FileText className="h-5 w-5" />
+                  <span>Digital Agreement</span>
+                </h3>
+                <p className="text-gray-300 text-sm mb-6">
+                  Both parties must digitally sign this agreement to proceed with the project.
                 </p>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold text-purple-400">{generatedChecklist.length}</div>
-                <div className="text-xs text-purple-300">Total Items</div>
+
+                <div className="grid md:grid-cols-2 gap-6 mb-6">
+                  <SignatureBox
+                    title="Client Signature"
+                    placeholder="Enter your full name"
+                    signature={clientSignature}
+                    onSignatureChange={setClientSignature}
+                  />
+                  <SignatureBox
+                    title="Freelancer Signature"
+                    placeholder="Freelancer's full name"
+                    signature={freelancerSignature}
+                    onSignatureChange={setFreelancerSignature}
+                    disabled={true}
+                  />
+                </div>
+
+                <div className="text-center">
+                  <button
+                    onClick={handleConfirmAgreement}
+                    disabled={!clientSignature.timestamp || !freelancerSignature.timestamp}
+                    className={`px-8 py-3 rounded-lg font-semibold transition-colors focus:outline-none focus:ring-2 ${
+                      clientSignature.timestamp && freelancerSignature.timestamp
+                        ? 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-500'
+                        : 'bg-gray-600 cursor-not-allowed text-gray-300 focus:ring-gray-400'
+                    }`}
+                  >
+                    Confirm & Lock Checklist
+                  </button>
+                  <p className="text-gray-400 text-xs mt-2">
+                    Note: Freelancer signature will be obtained when they accept the project
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -953,7 +1012,7 @@ const ClientDashboard: React.FC = () => {
                 ) : (
                   <>
                     <FileText className="h-4 w-4" />
-                    <span>Generate Final Checklist</span>
+                    <span>Generate Project Agreement</span>
                   </>
                 )}
               </button>
