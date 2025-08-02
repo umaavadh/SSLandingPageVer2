@@ -241,6 +241,13 @@ const ClientDashboard: React.FC = () => {
       }
       
       if (data) {
+        // Set the current project
+        setCurrentProject({
+          id: data.project_id,
+          name: data.project_name || 'Untitled Project'
+        });
+        
+        // Load the conversation messages
         setCurrentProjectId(data.project_id);
         setCurrentProjectName(data.project_name || '');
         setConversation(data.messages || []);
@@ -248,6 +255,12 @@ const ClientDashboard: React.FC = () => {
         setShowChecklist(false);
         setExtractedParameters([]);
         setShowProjectSelector(false);
+        
+        // Close the project selector modal
+        setShowProjectSelector(false);
+        
+        // Switch to the Create Project tab to show the loaded conversation
+        setActiveTab('create-project');
       }
     } catch (error) {
       console.error('Error loading project:', error);
