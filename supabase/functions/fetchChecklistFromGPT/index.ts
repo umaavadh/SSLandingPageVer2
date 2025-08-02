@@ -6,7 +6,6 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -17,10 +16,7 @@ serve(async (req) => {
     if (!messages || !Array.isArray(messages)) {
       return new Response(
         JSON.stringify({ error: 'Messages array is required' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
@@ -28,14 +24,10 @@ serve(async (req) => {
     if (!openaiApiKey) {
       return new Response(
         JSON.stringify({ error: 'OpenAI API key not configured' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    // Call OpenAI API
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -55,9 +47,9 @@ serve(async (req) => {
 - Friendly, patient, and curious
 - Your goal is to **extract clarity without overwhelming the client**
 - Use human-like phrases like:
-  - "That sounds exciting!"
-  - "Let me dig a little deeper..."
-  - "Just one or two more details and we’re all set!"
+  - "That sounds exciting!"
+  - "Let me dig a little deeper..."
+  - "Just one or two more details and we’re all set!"
 ---
 ## 🎯 Primary Objective
 Help the client define a **complete and reviewable video project checklist** by asking for the following **14 key parameters** (in natural conversation).
@@ -81,30 +73,28 @@ You may ask these **one at a time** or **grouped by theme**, but ensure **all ar
 ### Contextual
 13. Distribution Platform (Instagram, TikTok, YouTube, etc.)
 14. Language & Tone (formal, dramatic, quirky)
----
+
 ## 🧾 Output Format
 Return all collected parameters in this structured JSON:
-\`\`\`json
 {
-  "project_summary": {
-    "video_type": "Explainer / Promo / Reel",
-    "estimated_duration": "90 seconds",
-    "platform": "Instagram Reels",
-    "language_tone": "Casual, Gen-Z"
-  },
-  "checklist": [
-    {
-      "id": 1,
-      "category": "Technical",
-      "parameter": "Resolution",
-      "value": "4K"
-    },
-    ...
-  ],
-  "total_parameters_collected": 14,
-  "client_approval_required": true
-\`\`\`
-
+  "project_summary": {
+    "video_type": "Explainer / Promo / Reel",
+    "estimated_duration": "90 seconds",
+    "platform": "Instagram Reels",
+    "language_tone": "Casual, Gen-Z"
+  },
+  "checklist": [
+    {
+      "id": 1,
+      "category": "Technical",
+      "parameter": "Resolution",
+      "value": "4K"
+    },
+    ...
+  ],
+  "total_parameters_collected": 14,
+  "client_approval_required": true
+}
 
 🔁 Flow Rules
 Open with a warm greeting and ask what kind of video they’re working on 
@@ -115,16 +105,14 @@ End with both:
 Conversational summary of checklist 
 Structured JSON output 
 
-
 🧠 Memory & Reasoning
 Reference earlier answers naturally 
 Offer smart defaults if client isn’t sure 
 Handle budget or scope-based suggestions if needed 
 
-
 🔒 Finalization
 Once client approves, say:
-“Awesome, your checklist is finalized! This will help your freelancer stay on target, and our AI will also use it to validate the final delivery.”
+“Awesome, your checklist is finalized! This will help your freelancer stay on target, and our AI will also use it to validate the final delivery.”`
           },
           ...messages
         ],
@@ -140,57 +128,39 @@ Once client approves, say:
       const err = await res.text()
       console.error('OpenAI API error:', res.status, err)
       return new Response(
-        JSON.stringify({ error: \`OpenAI API error: ${res.status}` }),
-        { 
-          status: res.status, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
+        JSON.stringify({ error: `OpenAI API error: ${res.status}` }),
+        { status: res.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
     const data = await res.json()
     const assistantReply = data.choices[0].message.content
 
-    // Simple parameter extraction logic
     const parameterKeywords = [
-      'video', 'duration', 'audience', 'budget', 'style', 'brand', 'timeline', 
+      'video', 'duration', 'audience', 'budget', 'style', 'brand', 'timeline',
       'goal', 'platform', 'resolution', 'format', 'version', 'script', 'revision'
     ]
-    
+
     const messageText = assistantReply.toLowerCase()
-    const detectedParams = parameterKeywords.filter(keyword => 
-      messageText.includes(keyword) || messages.some(msg => 
+    const detectedParams = parameterKeywords.filter(keyword =>
+      messageText.includes(keyword) || messages.some(msg =>
         msg.content.toLowerCase().includes(keyword)
       )
     ).length
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         reply: assistantReply,
         detectedParameters: Math.min(detectedParams, 14)
       }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
   } catch (error) {
     console.error('Function error:', error)
     return new Response(
       JSON.stringify({ error: 'Internal server error' }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
 })
-          }
-        ]
-      }
-      )
-    }
-    )
-  }
-}
-)
