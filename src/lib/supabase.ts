@@ -78,3 +78,70 @@ export const updateUserProfile = async (profileData: any) => {
 
   return { data, error }
 }
+
+// Project conversation management functions
+export const getProjectConversations = async () => {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { data: null, error: new Error('No authenticated user') }
+
+  const { data, error } = await supabase
+    .from('project_conversations')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('updated_at', { ascending: false })
+
+  return { data, error }
+}
+
+export const getProjectConversation = async (projectId: string) => {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { data: null, error: new Error('No authenticated user') }
+
+  const { data, error } = await supabase
+    .from('project_conversations')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('project_id', projectId)
+    .single()
+
+  return { data, error }
+}
+
+export const saveProjectConversation = async (
+  projectId: string,
+  projectName: string,
+  messages: any[],
+  parametersCollected: number,
+  status: string = 'active'
+) => {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { data: null, error: new Error('No authenticated user') }
+
+  const { data, error } = await supabase
+    .from('project_conversations')
+    .upsert({
+      user_id: user.id,
+      project_id: projectId,
+      project_name: projectName,
+      messages: messages,
+      parameters_collected: parametersCollected,
+      status: status
+    })
+    .select()
+    .single()
+
+  return { data, error }
+}
+
+export const deleteProjectConversation = async (projectId: string) => {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { data: null, error: new Error('No authenticated user') }
+
+  const { error } = await supabase
+    .from('project_conversations')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('project_id', projectId)
+
+  return { error }
+}

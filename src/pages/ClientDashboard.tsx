@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { User, Briefcase, CreditCard, MessageSquare, Shield, Edit3, Save, X, CheckCircle, Plus, Send, Bot, Clock, AlertCircle, FileText, Target, Users, DollarSign, Palette, Calendar, Zap, Monitor, Settings, Copy, RefreshCw, Download } from 'lucide-react';
+import { User, Briefcase, CreditCard, MessageSquare, Shield, Edit3, Save, X, CheckCircle, Plus, Send, Bot, Clock, AlertCircle, FileText, Target, Users, DollarSign, Palette, Calendar, Zap, Monitor, Settings, Copy, RefreshCw, Download, FolderPlus, History, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getCurrentUser, signOut } from '../lib/supabase';
+import { getCurrentUser, signOut, getProjectConversations, getProjectConversation, saveProjectConversation, deleteProjectConversation } from '../lib/supabase';
 import ChecklistDisplay from '../components/ChecklistDisplay';
 import SignatureBox from '../components/SignatureBox';
 import ConfirmationBanner from '../components/ConfirmationBanner';
@@ -36,6 +36,16 @@ interface Signature {
   timestamp: Date | null;
 }
 
+interface ProjectConversation {
+  id: string;
+  project_id: string;
+  project_name: string;
+  messages: Message[];
+  parameters_collected: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
 const ClientDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('profile');
@@ -72,6 +82,14 @@ const ClientDashboard: React.FC = () => {
   const [extractedParameters, setExtractedParameters] = useState<Parameter[]>([]);
   const [showChecklist, setShowChecklist] = useState(false);
   const [isGeneratingChecklist, setIsGeneratingChecklist] = useState(false);
+  
+  // Project Management State
+  const [currentProjectId, setCurrentProjectId] = useState<string>('');
+  const [currentProjectName, setCurrentProjectName] = useState<string>('');
+  const [savedProjects, setSavedProjects] = useState<ProjectConversation[]>([]);
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [showProjectSelector, setShowProjectSelector] = useState(false);
   
   // Digital Agreement State
   const [clientSignature, setClientSignature] = useState<Signature>({
@@ -144,6 +162,9 @@ const ClientDashboard: React.FC = () => {
             setProfileData(prev => ({ ...prev, email: user.email || '' }))
             setOriginalData(prev => ({ ...prev, email: user.email || '' }))
           }
+          
+          // Load saved project conversations
+          await loadSavedProjects()
         }
       } catch (error) {
         console.error('Error loading user data:', error)
@@ -153,6 +174,133 @@ const ClientDashboard: React.FC = () => {
     loadUserData()
   }, [])
 
+  // Load saved project conversations
+  const loadSavedProjects = async () => {
+    try {
+      const { data, error } = await getProjectConversations()
+      if (error) {
+        console.error('Error loading projects:', error)
+        return
+      }
+      if (data) {
+        setSavedProjects(data)
+      }
+    } catch (error) {
+      console.error('Error loading projects:', error)
+    }
+  }
+
+  // Generate unique project ID
+  const generateProjectId = () => {
+    return `proj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  }
+
+  // Start new project
+  const startNewProject = async () => {
+    if (!newProjectName.trim()) {
+      setError('Please enter a project name')
+      return
+    }
+
+    const projectId = generateProjectId()
+    const welcomeMessage: Message = {
+      id: 'welcome',
+      role: 'assistant',
+      content: "Hello! I'm your AI project assistant. I'll help you create a detailed checklist for your project by asking you some questions. Let's start - what kind of project are you planning?",
+      timestamp: new Date()
+    }
+
+    try {
+      await saveProjectConversation(projectId, newProjectName.trim(), [welcomeMessage], 0, 'active')
+      
+      setCurrentProjectId(projectId)
+      setCurrentProjectName(newProjectName.trim())
+      setConversation([welcomeMessage])
+      setCollectedParameters(0)
+      setShowChecklist(false)
+      setExtractedParameters([])
+      setShowNewProjectModal(false)
+      setNewProjectName('')
+      
+      await loadSavedProjects()
+    } catch (error) {
+      console.error('Error creating new project:', error)
+      setError('Failed to create new project')
+    }
+  }
+
+  // Load existing project
+  const loadProject = async (projectId: string) => {
+    try {
+      const { data, error } = await getProjectConversation(projectId)
+      if (error) {
+        console.error('Error loading project:', error)
+        setError('Failed to load project')
+        return
+      }
+      
+      if (data) {
+        setCurrentProjectId(data.project_id)
+        setCurrentProjectName(data.project_name || '')
+        setConversation(data.messages || [])
+        setCollectedParameters(data.parameters_collected || 0)
+        setShowChecklist(false)
+        setExtractedParameters([])
+        setShowProjectSelector(false)
+      }
+    } catch (error) {
+      console.error('Error loading project:', error)
+      setError('Failed to load project')
+    }
+  }
+
+  // Save current conversation
+  const saveCurrentConversation = async () => {
+    if (!currentProjectId || !currentProjectName) return
+    
+    try {
+      await saveProjectConversation(
+        currentProjectId,
+        currentProjectName,
+        conversation,
+        collectedParameters,
+        'active'
+      )
+    } catch (error) {
+      console.error('Error saving conversation:', error)
+    }
+  }
+
+  // Delete project
+  const deleteProject = async (projectId: string) => {
+    if (!confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      const { error } = await deleteProjectConversation(projectId)
+      if (error) {
+        console.error('Error deleting project:', error)
+        setError('Failed to delete project')
+        return
+      }
+      
+      // If we're deleting the current project, reset the state
+      if (projectId === currentProjectId) {
+        setCurrentProjectId('')
+        setCurrentProjectName('')
+        setConversation([])
+        setCollectedParameters(0)
+        setShowChecklist(false)
+        setExtractedParameters([])
+      }
+      
+      await loadSavedProjects()
+    } catch (error) {
+      console.error('Error deleting project:', error)
+      setError('Failed to delete project')
+    }
+  }
   // Calculate profile completion percentage
   const calculateCompletion = () => {
     const fields = ['fullName', 'mobileNumber', 'companyName'];
@@ -315,6 +463,11 @@ const ClientDashboard: React.FC = () => {
   const handleSendMessage = async () => {
     if (!currentMessage.trim() || isLoading) return;
 
+    // Ensure we have a current project
+    if (!currentProjectId) {
+      setError('Please start a new project first')
+      return
+    }
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -348,10 +501,20 @@ const ClientDashboard: React.FC = () => {
       };
 
       // Add assistant message to conversation
-      setConversation(prev => [...prev, assistantMessage]);
+      const finalConversation = [...updatedConversation, assistantMessage];
+      setConversation(finalConversation);
       
       // Update collected parameters from API response
       setCollectedParameters(detectedParameters);
+      
+      // Save conversation to database
+      await saveProjectConversation(
+        currentProjectId,
+        currentProjectName,
+        finalConversation,
+        detectedParameters,
+        'active'
+      );
       
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get response. Please try again.');
@@ -515,16 +678,11 @@ const ClientDashboard: React.FC = () => {
 
   // Initialize conversation
   useEffect(() => {
-    if (activeTab === 'create-project' && conversation.length === 0) {
-      const welcomeMessage: Message = {
-        id: 'welcome',
-        role: 'assistant',
-        content: "Hello! I'm your AI project assistant. I'll help you create a detailed checklist for your project by asking you some questions. Let's start - what kind of project are you planning?",
-        timestamp: new Date()
-      };
-      setConversation([welcomeMessage]);
+    if (activeTab === 'create-project' && conversation.length === 0 && !currentProjectId) {
+      // Show new project modal if no current project
+      setShowNewProjectModal(true);
     }
-  }, [activeTab, conversation.length]);
+  }, [activeTab, conversation.length, currentProjectId]);
 
   const renderProfileContent = () => (
     <div className="space-y-6 sm:space-y-8">
@@ -782,6 +940,125 @@ const ClientDashboard: React.FC = () => {
 
   const renderCreateProjectContent = () => (
     <div className="space-y-6 sm:space-y-8">
+      {/* New Project Modal */}
+      {showNewProjectModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+          <div className="bg-gray-800 rounded-2xl p-8 max-w-md w-full border border-purple-500/30">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-purple-400">
+                Start New Project
+              </h3>
+              <button
+                onClick={() => setShowNewProjectModal(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-gray-300 text-sm font-medium mb-2">
+                  Project Name *
+                </label>
+                <input
+                  type="text"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  placeholder="e.g., Marketing Video for Q1 Campaign"
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                  autoFocus
+                />
+              </div>
+              
+              <div className="flex space-x-3 pt-4">
+                <button
+                  onClick={() => setShowNewProjectModal(false)}
+                  className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={startNewProject}
+                  disabled={!newProjectName.trim()}
+                  className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 ${
+                    newProjectName.trim()
+                      ? 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-500'
+                      : 'bg-gray-600 cursor-not-allowed text-gray-300 focus:ring-gray-400'
+                  }`}
+                >
+                  Start Project
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Project Selector Modal */}
+      {showProjectSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+          <div className="bg-gray-800 rounded-2xl p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto border border-purple-500/30">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-purple-400">
+                Select Project
+              </h3>
+              <button
+                onClick={() => setShowProjectSelector(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              {savedProjects.length === 0 ? (
+                <div className="text-center py-8">
+                  <FolderPlus className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-400">No saved projects yet</p>
+                </div>
+              ) : (
+                savedProjects.map((project) => (
+                  <div
+                    key={project.id}
+                    className="flex items-center justify-between p-4 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors"
+                  >
+                    <div className="flex-1">
+                      <h4 className="font-medium text-white">{project.project_name}</h4>
+                      <div className="flex items-center space-x-4 text-sm text-gray-400 mt-1">
+                        <span>{project.parameters_collected}/14 parameters</span>
+                        <span>Updated {new Date(project.updated_at).toLocaleDateString()}</span>
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          project.status === 'active' ? 'bg-green-900/20 text-green-400' :
+                          project.status === 'completed' ? 'bg-blue-900/20 text-blue-400' :
+                          'bg-gray-900/20 text-gray-400'
+                        }`}>
+                          {project.status}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => loadProject(project.project_id)}
+                        className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      >
+                        Load
+                      </button>
+                      <button
+                        onClick={() => deleteProject(project.project_id)}
+                        className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Show Checklist if Generated */}
       {showChecklist && extractedParameters.length > 0 && (
         <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
@@ -869,35 +1146,100 @@ const ClientDashboard: React.FC = () => {
       {/* Project Creation Header */}
       {!showChecklist && (
         <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Create New Project</h2>
-            <p className="text-sm sm:text-base text-gray-300">
-              Chat with our AI assistant to create a detailed project checklist
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">
+                {currentProjectName || 'Create New Project'}
+              </h2>
+              <p className="text-sm sm:text-base text-gray-300">
+                {currentProjectId 
+                  ? 'Continue chatting with our AI assistant to refine your project checklist'
+                  : 'Chat with our AI assistant to create a detailed project checklist'
+                }
+              </p>
+            </div>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => setShowProjectSelector(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
+              >
+                <History className="h-4 w-4" />
+                <span>Load Project</span>
+              </button>
+              <button
+                onClick={() => setShowNewProjectModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
+              >
+                <FolderPlus className="h-4 w-4" />
+                <span>New Project</span>
+              </button>
+            </div>
           </div>
-          <div className="flex items-center space-x-2 text-sm text-purple-400">
-            <CheckCircle className="h-4 w-4" />
-            <span>{collectedParameters}/14 parameters collected</span>
-          </div>
-        </div>
+
+          {/* Show progress only if we have a current project */}
+          {currentProjectId && (
+            <div className="flex items-center space-x-2 text-sm text-purple-400 mb-6">
+              <CheckCircle className="h-4 w-4" />
+              <span>{collectedParameters}/14 parameters collected</span>
+            </div>
+          )}
+
+          {/* Show message if no current project */}
+          {!currentProjectId && (
+            <div className="text-center py-12">
+              <div className="flex flex-col items-center space-y-4">
+                <div className="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center">
+                  <FolderPlus className="h-8 w-8 text-gray-400" />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-lg font-semibold text-white">
+                    No Active Project
+                  </h3>
+                  <p className="text-gray-400 max-w-md">
+                    Start a new project or load an existing one to continue working with the AI assistant.
+                  </p>
+                </div>
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => setShowNewProjectModal(true)}
+                    className="flex items-center space-x-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  >
+                    <FolderPlus className="h-4 w-4" />
+                    <span>Start New Project</span>
+                  </button>
+                  {savedProjects.length > 0 && (
+                    <button
+                      onClick={() => setShowProjectSelector(true)}
+                      className="flex items-center space-x-2 px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
+                    >
+                      <History className="h-4 w-4" />
+                      <span>Load Project</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
         {/* Progress Bar */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-300">Project Definition Progress</span>
-            <span className="text-sm text-purple-400">{Math.round((collectedParameters / 14) * 100)}%</span>
+        {currentProjectId && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-300">Project Definition Progress</span>
+              <span className="text-sm text-purple-400">{Math.round((collectedParameters / 14) * 100)}%</span>
+            </div>
+            <div className="w-full bg-gray-700 rounded-full h-2">
+              <div 
+                className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-500"
+                style={{ width: `${Math.min((collectedParameters / 14) * 100, 100)}%` }}
+              ></div>
+            </div>
           </div>
-          <div className="w-full bg-gray-700 rounded-full h-2">
-            <div 
-              className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-500"
-              style={{ width: `${Math.min((collectedParameters / 14) * 100, 100)}%` }}
-            ></div>
-          </div>
-        </div>
+        )}
 
-        {/* Chat Interface */}
-        <div className="bg-gray-900 rounded-xl border border-gray-600 overflow-hidden">
+        {/* Chat Interface - only show if we have a current project */}
+        {currentProjectId && (
+          <div className="bg-gray-900 rounded-xl border border-gray-600 overflow-hidden">
           {/* Chat Header */}
           <div className="bg-gray-700 px-4 py-3 border-b border-gray-600">
             <div className="flex items-center space-x-3">
@@ -906,7 +1248,7 @@ const ClientDashboard: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-sm font-semibold text-white">AI Project Assistant</h3>
-                <p className="text-xs text-gray-400">Online • Helping you create your project</p>
+                <p className="text-xs text-gray-400">Online • Working on: {currentProjectName}</p>
               </div>
             </div>
           </div>
@@ -983,10 +1325,10 @@ const ClientDashboard: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Generate Checklist Button */}
-        {collectedParameters >= 14 && (
+        {currentProjectId && collectedParameters >= 14 && (
           <div className="mt-6 p-4 bg-green-900/20 border border-green-500/30 rounded-xl">
             <div className="flex items-center justify-between">
               <div>
@@ -1019,7 +1361,7 @@ const ClientDashboard: React.FC = () => {
             </div>
           </div>
         )}
-      </div>
+        </div>
       )}
     </div>
   );
