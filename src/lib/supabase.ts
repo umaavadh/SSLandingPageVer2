@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Briefcase, CreditCard, MessageSquare, CheckCircle, Clock, Shield, Edit3, Save, X, Upload, Plus, BarChart3, TrendingUp, Calendar, DollarSign, Users, AlertCircle, Loader, FileText, Folder, Wand2, Minus, Brain, Play, Camera, Palette, Music, Film, Monitor, Mic } from 'lucide-react';
+import { User, Briefcase, CreditCard, MessageSquare, CheckCircle, Clock, Shield, Edit3, Save, X, Upload, Plus, BarChart3, TrendingUp, Calendar, DollarSign, Users, AlertCircle, Loader, FileText, Folder, Wand2, Minus, Brain, Play, Camera, Palette, Music, Film, Monitor, Mic, Zap, Settings, Volume2, FileVideo, Maximize, Sun, Scissors, AlertTriangle, Lightbulb, Download, RotateCcw, Edit, Trash2, Eye, Search, Filter, ArrowUpDown, ChevronDown } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getCurrentUser, signOut } from '../lib/supabase';
 import { generateChecklist, ChecklistItem, ConversationMessage } from '../lib/edgeFunctions';
