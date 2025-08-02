@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Briefcase, CreditCard, MessageSquare, Shield, Edit3, Save, X, CheckCircle } from 'lucide-react';
+import { User, Briefcase, CreditCard, MessageSquare, Shield, Edit3, Save, X, CheckCircle, Plus, Send, Bot, Clock, AlertCircle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getCurrentUser, signOut } from '../lib/supabase';
 
@@ -11,6 +11,13 @@ interface ProfileData {
   companyName: string;
   gstNumber: string;
   clientId: string;
+}
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
 }
 
 const ClientDashboard: React.FC = () => {
@@ -40,6 +47,14 @@ const ClientDashboard: React.FC = () => {
   });
   const [errors, setErrors] = useState<Partial<ProfileData>>({});
 
+  // Project Creation State
+  const [conversation, setConversation] = useState<Message[]>([]);
+  const [currentMessage, setCurrentMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [collectedParameters, setCollectedParameters] = useState(0);
+  const [showCreateProject, setShowCreateProject] = useState(false);
+
   const countryCodes = [
     { code: '+91', country: 'India', flag: '🇮🇳' },
     { code: '+1', country: 'USA', flag: '🇺🇸' },
@@ -53,7 +68,8 @@ const ClientDashboard: React.FC = () => {
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
-    { id: 'projects', label: 'My Projects', icon: Briefcase },
+    { id: 'projects', label: 'Projects', icon: Briefcase },
+    { id: 'create-project', label: 'Create Project', icon: Plus },
     { id: 'transactions', label: 'Transactions', icon: CreditCard },
     { id: 'messages', label: 'Messages', icon: MessageSquare }
   ];
@@ -226,6 +242,90 @@ const ClientDashboard: React.FC = () => {
       console.error('Error signing out:', error);
     }
   };
+
+  // Mock function to simulate GPT API call
+  const fetchChecklistFromGPT = async (conversationHistory: Message[]): Promise<string> => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000));
+    
+    // Mock responses based on conversation length
+    const responses = [
+      "I'd be happy to help you create a detailed project checklist! Let's start by understanding your project better. What type of video content are you looking to create?",
+      "Great! For a promotional video, I'll need some more details. What's the target duration you're aiming for? And who is your target audience?",
+      "Perfect! Now, what's your budget range for this project? Also, do you have any specific style preferences (corporate, casual, animated, etc.)?",
+      "Excellent information! A few more questions: Do you have existing brand assets (logos, colors, fonts) that need to be incorporated? And what's your preferred timeline for completion?",
+      "Thanks for those details! What's the primary goal of this video - brand awareness, product promotion, or something else? Also, where will this video be primarily used (social media, website, presentations)?",
+      "Almost there! Do you have any specific technical requirements (resolution, format, aspect ratio)? And will you need multiple versions for different platforms?",
+      "Perfect! I have enough information now. Based on our conversation, I can see we've covered all the essential parameters for your promotional video project. You can now generate the final checklist!"
+    ];
+    
+    const responseIndex = Math.min(conversationHistory.filter(m => m.role === 'user').length - 1, responses.length - 1);
+    return responses[responseIndex];
+  };
+
+  // Handle sending a message
+  const handleSendMessage = async () => {
+    if (!currentMessage.trim() || isLoading) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: currentMessage.trim(),
+      timestamp: new Date()
+    };
+
+    // Add user message to conversation
+    const updatedConversation = [...conversation, userMessage];
+    setConversation(updatedConversation);
+    setCurrentMessage('');
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Fetch response from GPT
+      const assistantResponse = await fetchChecklistFromGPT(updatedConversation);
+      
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: assistantResponse,
+        timestamp: new Date()
+      };
+
+      // Add assistant message to conversation
+      setConversation(prev => [...prev, assistantMessage]);
+      
+      // Update collected parameters (simulate parameter extraction)
+      setCollectedParameters(prev => Math.min(prev + 2, 16));
+      
+    } catch (err) {
+      setError('Failed to get response. Please try again.');
+      console.error('Error fetching response:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle key press in message input
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  // Initialize conversation
+  useEffect(() => {
+    if (activeTab === 'create-project' && conversation.length === 0) {
+      const welcomeMessage: Message = {
+        id: 'welcome',
+        role: 'assistant',
+        content: "Hello! I'm your AI project assistant. I'll help you create a detailed checklist for your project by asking you some questions. Let's start - what kind of project are you planning?",
+        timestamp: new Date()
+      };
+      setConversation([welcomeMessage]);
+    }
+  }, [activeTab, conversation.length]);
 
   const renderProfileContent = () => (
     <div className="space-y-6 sm:space-y-8">
@@ -452,12 +552,6 @@ const ClientDashboard: React.FC = () => {
               Manage and track your projects with freelancers
             </p>
           </div>
-          <button
-            disabled
-            className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-gray-400 rounded-lg cursor-not-allowed w-full sm:w-auto justify-center"
-          >
-            <span>Create Project (Coming Soon)</span>
-          </button>
         </div>
 
         {/* Projects List - This will be populated with real data */}
@@ -471,15 +565,167 @@ const ClientDashboard: React.FC = () => {
                 No Projects Yet
               </h3>
               <p className="text-sm sm:text-base text-gray-400 max-w-md">
-                Create your first project to start working with freelancers. 
-                Our AI will help you define clear requirements and manage deliverables.
+                Use the "Create Project" tab to start your first project with our AI assistant.
               </p>
             </div>
+            <button
+              onClick={() => setActiveTab('create-project')}
+              className="flex items-center space-x-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Create Your First Project</span>
+            </button>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
+
+  const renderCreateProjectContent = () => (
+    <div className="space-y-6 sm:space-y-8">
+      {/* Project Creation Header */}
+      <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Create New Project</h2>
+            <p className="text-sm sm:text-base text-gray-300">
+              Chat with our AI assistant to create a detailed project checklist
+            </p>
+          </div>
+          <div className="flex items-center space-x-2 text-sm text-purple-400">
+            <CheckCircle className="h-4 w-4" />
+            <span>{collectedParameters}/14 parameters collected</span>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-300">Project Definition Progress</span>
+            <span className="text-sm text-purple-400">{Math.round((collectedParameters / 14) * 100)}%</span>
+          </div>
+          <div className="w-full bg-gray-700 rounded-full h-2">
+            <div 
+              className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-500"
+              style={{ width: `${Math.min((collectedParameters / 14) * 100, 100)}%` }}
+            ></div>
+          </div>
+        </div>
+
+        {/* Chat Interface */}
+        <div className="bg-gray-900 rounded-xl border border-gray-600 overflow-hidden">
+          {/* Chat Header */}
+          <div className="bg-gray-700 px-4 py-3 border-b border-gray-600">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center">
+                <Bot className="h-4 w-4 text-white" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-white">AI Project Assistant</h3>
+                <p className="text-xs text-gray-400">Online • Helping you create your project</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Chat Messages */}
+          <div className="h-96 overflow-y-auto p-4 space-y-4">
+            {conversation.map((message) => (
+              <div
+                key={message.id}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${
+                    message.role === 'user'
+                      ? 'bg-purple-600 text-white rounded-br-sm'
+                      : 'bg-gray-700 text-gray-100 rounded-bl-sm'
+                  }`}
+                >
+                  <p className="text-sm leading-relaxed">{message.content}</p>
+                  <p className={`text-xs mt-1 ${
+                    message.role === 'user' ? 'text-purple-200' : 'text-gray-400'
+                  }`}>
+                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              </div>
+            ))}
+
+            {/* Loading indicator */}
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-gray-700 text-gray-100 rounded-2xl rounded-bl-sm px-4 py-2 max-w-xs">
+                  <div className="flex items-center space-x-2">
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    </div>
+                    <span className="text-xs text-gray-400">AI is typing...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="px-4 py-2 bg-red-900/20 border-t border-red-500/30">
+              <div className="flex items-center space-x-2 text-red-400 text-sm">
+                <AlertCircle className="h-4 w-4" />
+                <span>{error}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Message Input */}
+          <div className="border-t border-gray-600 p-4">
+            <div className="flex space-x-3">
+              <input
+                type="text"
+                value={currentMessage}
+                onChange={(e) => setCurrentMessage(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Type your message..."
+                disabled={isLoading}
+                className="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-full text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 disabled:opacity-50"
+              />
+              <button
+                onClick={handleSendMessage}
+                disabled={!currentMessage.trim() || isLoading}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Generate Checklist Button */}
+        {collectedParameters >= 14 && (
+          <div className="mt-6 p-4 bg-green-900/20 border border-green-500/30 rounded-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-green-400 mb-1">Ready to Generate Checklist!</h3>
+                <p className="text-sm text-green-300">
+                  We've collected enough information to create your detailed project checklist.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  // This would generate the final checklist
+                  alert('Checklist generation feature coming soon!');
+                }}
+                className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-green-500"
+              >
+                Generate Final Checklist
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   const renderTransactionsContent = () => (
     <div className="space-y-6 sm:space-y-8">
@@ -511,6 +757,8 @@ const ClientDashboard: React.FC = () => {
         return renderProfileContent();
       case 'projects':
         return renderMyProjectsContent();
+      case 'create-project':
+        return renderCreateProjectContent();
       case 'transactions':
         return renderTransactionsContent();
       case 'messages':
