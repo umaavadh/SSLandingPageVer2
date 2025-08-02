@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Briefcase, CreditCard, MessageSquare, Plus, Clock, Trash2, ArrowLeft, Send, Save, Bot, UserIcon } from 'lucide-react';
+import { User, Briefcase, CreditCard, MessageSquare, Plus, Clock, Trash2, ArrowLeft, Send, Save, Bot, UserIcon, FileText } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getCurrentUser, signOut, getUserProfile, updateUserProfile, getProjectConversations, getProjectConversation, saveProjectConversation, deleteProjectConversation } from '../lib/supabase';
 
@@ -66,6 +66,8 @@ const ClientDashboard: React.FC = () => {
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [showResumeProjects, setShowResumeProjects] = useState(false);
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [checklistData, setChecklistData] = useState<any>(null);
 
   const countryCodes = [
     { code: '+91', country: 'India', flag: '🇮🇳' },
@@ -279,6 +281,55 @@ const ClientDashboard: React.FC = () => {
       console.error('Error saving progress:', error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const generateChecklist = async () => {
+    if (!currentProject || parametersCollected < 14) return;
+
+    setIsLoading(true);
+    try {
+      // Create a prompt to generate the final checklist
+      const checklistPrompt = {
+        role: 'user' as const,
+        content: 'Based on our conversation, please generate a comprehensive project checklist in JSON format with the following structure: {"projectDetails": {"type": "", "duration": "", "style": "", "targetAudience": "", "budget": "", "timeline": "", "deliverables": "", "revisions": "", "script": "", "voiceover": "", "music": "", "branding": "", "distribution": "", "successMetrics": ""}, "requirements": [{"category": "", "requirement": "", "specification": "", "priority": ""}]}. Extract all the information we discussed and organize it into this structured format.'
+      };
+
+      const checklistMessages = [...messages, checklistPrompt];
+      const response = await fetchChecklistFromGPT(checklistMessages);
+      
+      // Try to extract JSON from the response
+      let parsedChecklist = null;
+      try {
+        const jsonMatch = response.reply.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsedChecklist = JSON.parse(jsonMatch[0]);
+        }
+      } catch (e) {
+        console.error('Error parsing checklist JSON:', e);
+      }
+
+      if (parsedChecklist) {
+        setChecklistData(parsedChecklist);
+        setShowChecklist(true);
+        
+        // Update project status to completed
+        await saveProjectConversation(
+          currentProject.id,
+          currentProject.name,
+          messages,
+          parametersCollected,
+          'completed'
+        );
+        await loadProjectConversations();
+      } else {
+        // Fallback: show a basic checklist view
+        setShowChecklist(true);
+      }
+    } catch (error) {
+      console.error('Error generating checklist:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -604,14 +655,26 @@ const ClientDashboard: React.FC = () => {
                   <p className="text-sm text-gray-400">AI Project Assistant</p>
                 </div>
               </div>
-              <button
-                onClick={handleSaveProgress}
-                disabled={isSaving}
-                className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
-              >
-                <Save className="h-4 w-4" />
-                <span>{isSaving ? 'Saving...' : 'Save Progress'}</span>
-              </button>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={handleSaveProgress}
+                  disabled={isSaving}
+                  className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
+                >
+                  <Save className="h-4 w-4" />
+                  <span>{isSaving ? 'Saving...' : 'Save Progress'}</span>
+                </button>
+                {parametersCollected >= 14 && (
+                  <button
+                    onClick={generateChecklist}
+                    disabled={isLoading}
+                    className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-400"
+                  >
+                    <FileText className="h-4 w-4" />
+                    <span>{isLoading ? 'Generating...' : 'Generate Checklist'}</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -839,6 +902,215 @@ const ClientDashboard: React.FC = () => {
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Checklist Modal */}
+      {showChecklist && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="bg-gray-100 px-8 py-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="text-center flex-1">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                    CONTRACT REVIEW REPORT - {currentProject?.name.toUpperCase()}
+                  </h2>
+                  <p className="text-gray-600">(Legal and Contractual)</p>
+                </div>
+                <button
+                  onClick={() => setShowChecklist(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            {/* Contract Details */}
+            <div className="px-8 py-6">
+              <div className="grid grid-cols-2 gap-8 mb-8">
+                <div className="space-y-4">
+                  <div className="flex">
+                    <span className="font-semibold text-gray-700 w-32">Name of Project:</span>
+                    <span className="text-gray-900">{currentProject?.name}</span>
+                  </div>
+                  <div className="flex">
+                    <span className="font-semibold text-gray-700 w-32">Location of Project:</span>
+                    <span className="text-gray-900">Remote/Digital</span>
+                  </div>
+                  <div className="flex">
+                    <span className="font-semibold text-gray-700 w-32">Name of Contractor:</span>
+                    <span className="text-gray-900">{profileData.fullName}</span>
+                  </div>
+                  <div className="flex">
+                    <span className="font-semibold text-gray-700 w-32">Effective Date:</span>
+                    <span className="text-gray-900">{new Date().toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex">
+                    <span className="font-semibold text-gray-700 w-32">Date of NTP:</span>
+                    <span className="text-gray-900">TBD</span>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div className="flex">
+                    <span className="font-semibold text-gray-700 w-32">Ref. No.:</span>
+                    <span className="text-gray-900">{currentProject?.id}</span>
+                  </div>
+                  <div className="flex">
+                    <span className="font-semibold text-gray-700 w-32">CRR No.:</span>
+                    <span className="text-gray-900">CRR-{Date.now().toString().slice(-6)}</span>
+                  </div>
+                  <div className="flex">
+                    <span className="font-semibold text-gray-700 w-32">Project ID No.:</span>
+                    <span className="text-gray-900">{currentProject?.id.slice(0, 8)}</span>
+                  </div>
+                  <div className="flex">
+                    <span className="font-semibold text-gray-700 w-32">ABC:</span>
+                    <span className="text-gray-900">SecureServe Platform</span>
+                  </div>
+                  <div className="flex">
+                    <span className="font-semibold text-gray-700 w-32">Fund Source:</span>
+                    <span className="text-gray-900">Client Escrow</span>
+                  </div>
+                  <div className="flex">
+                    <span className="font-semibold text-gray-700 w-32">Contract Amount:</span>
+                    <span className="text-gray-900">
+                      {checklistData?.projectDetails?.budget || 'As per agreement'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Requirements Table */}
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">
+                  Project Requirements and Deliverables
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse border border-gray-300">
+                    <thead>
+                      <tr className="bg-gray-100">
+                        <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">
+                          S.No.
+                        </th>
+                        <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">
+                          Requirement Category
+                        </th>
+                        <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">
+                          Specification
+                        </th>
+                        <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">
+                          Status
+                        </th>
+                        <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">
+                          Remarks
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {checklistData?.requirements ? (
+                        checklistData.requirements.map((req: any, index: number) => (
+                          <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="border border-gray-300 px-4 py-2 text-center">
+                              {index + 1}
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2">
+                              {req.category || req.requirement}
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2">
+                              {req.specification || req.requirement}
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2 text-center">
+                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm">
+                                Required
+                              </span>
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2">
+                              {req.priority === 'high' ? 'Critical' : 'Standard'}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        // Fallback rows based on common video project requirements
+                        [
+                          { category: 'Video Type', spec: checklistData?.projectDetails?.type || 'As specified', priority: 'Critical' },
+                          { category: 'Duration', spec: checklistData?.projectDetails?.duration || 'As specified', priority: 'Critical' },
+                          { category: 'Video Style', spec: checklistData?.projectDetails?.style || 'As specified', priority: 'Standard' },
+                          { category: 'Target Audience', spec: checklistData?.projectDetails?.targetAudience || 'As specified', priority: 'Standard' },
+                          { category: 'Deliverable Format', spec: checklistData?.projectDetails?.deliverables || 'As specified', priority: 'Critical' },
+                          { category: 'Revision Rounds', spec: checklistData?.projectDetails?.revisions || 'As specified', priority: 'Standard' },
+                          { category: 'Script Requirements', spec: checklistData?.projectDetails?.script || 'As specified', priority: 'Standard' },
+                          { category: 'Voiceover', spec: checklistData?.projectDetails?.voiceover || 'As specified', priority: 'Standard' },
+                          { category: 'Music/Audio', spec: checklistData?.projectDetails?.music || 'As specified', priority: 'Standard' },
+                          { category: 'Branding Guidelines', spec: checklistData?.projectDetails?.branding || 'As specified', priority: 'Standard' },
+                          { category: 'Distribution Channels', spec: checklistData?.projectDetails?.distribution || 'As specified', priority: 'Standard' },
+                          { category: 'Success Metrics', spec: checklistData?.projectDetails?.successMetrics || 'As specified', priority: 'Standard' },
+                          { category: 'Timeline', spec: checklistData?.projectDetails?.timeline || 'As specified', priority: 'Critical' },
+                          { category: 'Budget', spec: checklistData?.projectDetails?.budget || 'As specified', priority: 'Critical' }
+                        ].map((req, index) => (
+                          <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="border border-gray-300 px-4 py-2 text-center">
+                              {index + 1}
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2 font-medium">
+                              {req.category}
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2">
+                              {req.spec}
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2 text-center">
+                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm">
+                                Required
+                              </span>
+                            </td>
+                            <td className="border border-gray-300 px-4 py-2">
+                              {req.priority}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="border-t border-gray-200 pt-6">
+                <div className="text-sm text-gray-600 space-y-2">
+                  <p><strong>Note:</strong> This contract review report is generated based on the project requirements discussed and agreed upon between the client and freelancer.</p>
+                  <p><strong>Effective Date:</strong> {new Date().toLocaleDateString()}</p>
+                  <p><strong>Generated by:</strong> SecureServe AI Assistant</p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end space-x-4 mt-6 pt-6 border-t border-gray-200">
+                <button
+                  onClick={() => setShowChecklist(false)}
+                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  Print/Download
+                </button>
+                <button
+                  onClick={() => {
+                    // Here you would typically navigate to project creation or freelancer assignment
+                    setShowChecklist(false);
+                    setActiveTab('my-projects');
+                  }}
+                  className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  Proceed to Hire Freelancer
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
