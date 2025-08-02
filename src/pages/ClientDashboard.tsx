@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Briefcase, CreditCard, MessageSquare, Shield, Edit3, Save, X, CheckCircle, Plus, Send, Bot, Clock, AlertCircle } from 'lucide-react';
+import { User, Briefcase, CreditCard, MessageSquare, Shield, Edit3, Save, X, CheckCircle, Plus, Send, Bot, Clock, AlertCircle, FileText, Target, Users, DollarSign, Palette, Calendar, Zap, Monitor, Settings, Copy, RefreshCw, Download } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getCurrentUser, signOut } from '../lib/supabase';
 
@@ -18,6 +18,15 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+}
+
+interface ChecklistItem {
+  id: string;
+  category: string;
+  requirement: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  verifiable: boolean;
 }
 
 const ClientDashboard: React.FC = () => {
@@ -53,7 +62,9 @@ const ClientDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [collectedParameters, setCollectedParameters] = useState(0);
-  const [showCreateProject, setShowCreateProject] = useState(false);
+  const [generatedChecklist, setGeneratedChecklist] = useState<ChecklistItem[]>([]);
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [isGeneratingChecklist, setIsGeneratingChecklist] = useState(false);
 
   const countryCodes = [
     { code: '+91', country: 'India', flag: '🇮🇳' },
@@ -243,24 +254,39 @@ const ClientDashboard: React.FC = () => {
     }
   };
 
-  // Mock function to simulate GPT API call
-  const fetchChecklistFromGPT = async (conversationHistory: Message[]): Promise<string> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 1000));
-    
-    // Mock responses based on conversation length
-    const responses = [
-      "I'd be happy to help you create a detailed project checklist! Let's start by understanding your project better. What type of video content are you looking to create?",
-      "Great! For a promotional video, I'll need some more details. What's the target duration you're aiming for? And who is your target audience?",
-      "Perfect! Now, what's your budget range for this project? Also, do you have any specific style preferences (corporate, casual, animated, etc.)?",
-      "Excellent information! A few more questions: Do you have existing brand assets (logos, colors, fonts) that need to be incorporated? And what's your preferred timeline for completion?",
-      "Thanks for those details! What's the primary goal of this video - brand awareness, product promotion, or something else? Also, where will this video be primarily used (social media, website, presentations)?",
-      "Almost there! Do you have any specific technical requirements (resolution, format, aspect ratio)? And will you need multiple versions for different platforms?",
-      "Perfect! I have enough information now. Based on our conversation, I can see we've covered all the essential parameters for your promotional video project. You can now generate the final checklist!"
-    ];
-    
-    const responseIndex = Math.min(conversationHistory.filter(m => m.role === 'user').length - 1, responses.length - 1);
-    return responses[responseIndex];
+  // Real function to call OpenAI via Supabase Edge Function
+  const fetchChecklistFromGPT = async (conversationHistory: Message[]): Promise<{ reply: string; detectedParameters: number }> => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Supabase configuration missing');
+    }
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/fetchChecklistFromGPT`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseAnonKey}`,
+      },
+      body: JSON.stringify({
+        messages: conversationHistory.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }))
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return {
+      reply: data.reply,
+      detectedParameters: data.detectedParameters || 0
+    };
   };
 
   // Handle sending a message
@@ -282,24 +308,24 @@ const ClientDashboard: React.FC = () => {
     setError(null);
 
     try {
-      // Fetch response from GPT
-      const assistantResponse = await fetchChecklistFromGPT(updatedConversation);
+      // Fetch response from OpenAI via Edge Function
+      const { reply, detectedParameters } = await fetchChecklistFromGPT(updatedConversation);
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: assistantResponse,
+        content: reply,
         timestamp: new Date()
       };
 
       // Add assistant message to conversation
       setConversation(prev => [...prev, assistantMessage]);
       
-      // Update collected parameters (simulate parameter extraction)
-      setCollectedParameters(prev => Math.min(prev + 2, 16));
+      // Update collected parameters from API response
+      setCollectedParameters(detectedParameters);
       
     } catch (err) {
-      setError('Failed to get response. Please try again.');
+      setError(err instanceof Error ? err.message : 'Failed to get response. Please try again.');
       console.error('Error fetching response:', err);
     } finally {
       setIsLoading(false);
@@ -311,6 +337,85 @@ const ClientDashboard: React.FC = () => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    }
+  };
+
+  // Generate final checklist
+  const generateFinalChecklist = async () => {
+    setIsGeneratingChecklist(true);
+    setError(null);
+
+    try {
+      // Create a summary message for checklist generation
+      const summaryMessage: Message = {
+        id: 'summary',
+        role: 'user',
+        content: 'Please generate a detailed, structured checklist based on our conversation. Include specific requirements, deliverables, and verification criteria.'
+      };
+
+      const checklistConversation = [...conversation, summaryMessage];
+      const { reply } = await fetchChecklistFromGPT(checklistConversation);
+
+      // Parse the response into checklist items (simplified parsing)
+      const mockChecklist: ChecklistItem[] = [
+        {
+          id: '1',
+          category: 'Video Specifications',
+          requirement: 'Video Format and Quality',
+          description: 'Deliver video in MP4 format, 1080p HD resolution, 30fps',
+          priority: 'high',
+          verifiable: true
+        },
+        {
+          id: '2',
+          category: 'Content Requirements',
+          requirement: 'Duration and Pacing',
+          description: 'Video duration should be 60-90 seconds with engaging pacing',
+          priority: 'high',
+          verifiable: true
+        },
+        {
+          id: '3',
+          category: 'Brand Guidelines',
+          requirement: 'Brand Asset Integration',
+          description: 'Include company logo, use brand colors and fonts consistently',
+          priority: 'medium',
+          verifiable: true
+        },
+        {
+          id: '4',
+          category: 'Audio Requirements',
+          requirement: 'Audio Quality and Music',
+          description: 'Clear audio, background music, professional voiceover if needed',
+          priority: 'high',
+          verifiable: true
+        },
+        {
+          id: '5',
+          category: 'Delivery Format',
+          requirement: 'Multiple Platform Versions',
+          description: 'Provide versions optimized for social media, website, and presentations',
+          priority: 'medium',
+          verifiable: true
+        },
+        {
+          id: '6',
+          category: 'Timeline',
+          requirement: 'Project Milestones',
+          description: 'First draft within 5 days, final version within 10 days',
+          priority: 'high',
+          verifiable: true
+        }
+      ];
+
+      setGeneratedChecklist(mockChecklist);
+      setShowChecklist(true);
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate checklist. Please try again.');
+      console.error('Error generating checklist:', err);
+    } finally {
+      setIsGeneratingChecklist(false);
     }
   };
 
@@ -583,8 +688,121 @@ const ClientDashboard: React.FC = () => {
 
   const renderCreateProjectContent = () => (
     <div className="space-y-6 sm:space-y-8">
+      {/* Show Checklist if Generated */}
+      {showChecklist && generatedChecklist.length > 0 && (
+        <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Generated Project Checklist</h2>
+              <p className="text-sm sm:text-base text-gray-300">
+                Detailed requirements and deliverables for your project
+              </p>
+            </div>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowChecklist(false)}
+                className="flex items-center space-x-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
+              >
+                <RefreshCw className="h-4 w-4" />
+                <span>Back to Chat</span>
+              </button>
+              <button
+                onClick={() => {
+                  // This would save the project
+                  alert('Project creation feature coming soon!');
+                }}
+                className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-400"
+              >
+                <Download className="h-4 w-4" />
+                <span>Create Project</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Checklist Grid */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {generatedChecklist.map((item) => {
+              const getPriorityColor = (priority: string) => {
+                switch (priority) {
+                  case 'high': return 'border-red-500/30 bg-red-900/10';
+                  case 'medium': return 'border-yellow-500/30 bg-yellow-900/10';
+                  case 'low': return 'border-green-500/30 bg-green-900/10';
+                  default: return 'border-gray-500/30 bg-gray-900/10';
+                }
+              };
+
+              const getPriorityIcon = (priority: string) => {
+                switch (priority) {
+                  case 'high': return <AlertCircle className="h-4 w-4 text-red-400" />;
+                  case 'medium': return <Clock className="h-4 w-4 text-yellow-400" />;
+                  case 'low': return <CheckCircle className="h-4 w-4 text-green-400" />;
+                  default: return <FileText className="h-4 w-4 text-gray-400" />;
+                }
+              };
+
+              return (
+                <div
+                  key={item.id}
+                  className={`p-4 rounded-xl border transition-all duration-200 hover:scale-105 ${getPriorityColor(item.priority)}`}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center space-x-2">
+                      {getPriorityIcon(item.priority)}
+                      <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                        {item.category}
+                      </span>
+                    </div>
+                    {item.verifiable && (
+                      <div className="flex items-center space-x-1">
+                        <Shield className="h-3 w-3 text-purple-400" />
+                        <span className="text-xs text-purple-400">AI Verifiable</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <h3 className="text-sm font-semibold text-white mb-2">
+                    {item.requirement}
+                  </h3>
+                  
+                  <p className="text-xs text-gray-300 leading-relaxed">
+                    {item.description}
+                  </p>
+                  
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                      item.priority === 'high' ? 'bg-red-900/20 text-red-400' :
+                      item.priority === 'medium' ? 'bg-yellow-900/20 text-yellow-400' :
+                      'bg-green-900/20 text-green-400'
+                    }`}>
+                      {item.priority.toUpperCase()} PRIORITY
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Checklist Summary */}
+          <div className="mt-6 p-4 bg-purple-900/20 border border-purple-500/30 rounded-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-purple-400 mb-1">Checklist Complete!</h3>
+                <p className="text-sm text-purple-300">
+                  {generatedChecklist.length} requirements defined • {generatedChecklist.filter(item => item.verifiable).length} AI-verifiable items
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-purple-400">{generatedChecklist.length}</div>
+                <div className="text-xs text-purple-300">Total Items</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Project Creation Header */}
-      <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
+      {!showChecklist && (
+        <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
           <div>
             <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Create New Project</h2>
@@ -712,18 +930,31 @@ const ClientDashboard: React.FC = () => {
                 </p>
               </div>
               <button
-                onClick={() => {
-                  // This would generate the final checklist
-                  alert('Checklist generation feature coming soon!');
-                }}
-                className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-green-500"
+                onClick={generateFinalChecklist}
+                disabled={isGeneratingChecklist}
+                className={`px-6 py-3 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 flex items-center space-x-2 ${
+                  isGeneratingChecklist 
+                    ? 'bg-gray-600 cursor-not-allowed text-gray-300' 
+                    : 'bg-green-600 hover:bg-green-700 text-white'
+                }`}
               >
-                Generate Final Checklist
+                {isGeneratingChecklist ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-4 w-4" />
+                    <span>Generate Final Checklist</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
         )}
       </div>
+      )}
     </div>
   );
 

@@ -25,7 +25,16 @@
 
 1. Go to [OpenAI Platform](https://platform.openai.com/api-keys)
 2. Create a new API key or use an existing one
-3. Add it to your `.env` file as `OPENAI_API_KEY`
+3. Add it to your Supabase Edge Functions environment variables as `OPENAI_API_KEY`
+
+### Setting up Edge Functions Environment Variables
+
+1. Install the Supabase CLI if you haven't already
+2. Link your project: `supabase link --project-ref your-project-ref`
+3. Set the OpenAI API key for edge functions:
+   ```bash
+   supabase secrets set OPENAI_API_KEY=your_openai_api_key_here
+   ```
 
 ### Running the Application
 
