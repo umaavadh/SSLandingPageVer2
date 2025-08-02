@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Briefcase, CreditCard, MessageSquare, Shield, Edit3, Save, X, Plus, Minus, Wand2, Loader, CheckCircle, AlertCircle } from 'lucide-react';
+import { User, Briefcase, CreditCard, MessageSquare, CheckCircle, Clock, Shield, Edit3, Save, X, Upload, Plus, BarChart3, TrendingUp, Calendar, DollarSign, Users, AlertCircle, Loader, FileText, Folder, Wand2, Minus, Brain, Play, Camera, Palette, Music, Film, Monitor, Mic } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getCurrentUser, signOut } from '../lib/supabase';
 import { generateChecklist, ChecklistItem, ConversationMessage } from '../lib/edgeFunctions';
@@ -85,6 +85,7 @@ const ClientDashboard: React.FC = () => {
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'create-project', label: 'Create Project', icon: Plus },
     { id: 'projects', label: 'My Projects', icon: Briefcase },
+    { id: 'ai-analysis', label: 'AI Analysis', icon: Brain },
     { id: 'transactions', label: 'Transactions', icon: CreditCard },
     { id: 'messages', label: 'Messages', icon: MessageSquare }
   ];
