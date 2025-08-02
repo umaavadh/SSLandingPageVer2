@@ -70,6 +70,12 @@ const ClientDashboard: React.FC = () => {
     completionDate: ''
   });
 
+  // AI Analysis state
+  const [analysisFile, setAnalysisFile] = useState<File | null>(null);
+  const [analysisResults, setAnalysisResults] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+
   const countryCodes = [
     { code: '+91', country: 'India', flag: '🇮🇳' },
     { code: '+1', country: 'USA', flag: '🇺🇸' },
