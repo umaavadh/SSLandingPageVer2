@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { User, Briefcase, CreditCard, MessageSquare, CheckCircle, Clock, Shield, Edit3, Save, X, Upload } from 'lucide-react';
+import { User, Briefcase, CreditCard, MessageSquare, CheckCircle, Clock, Shield, Edit3, Save, X, Upload, Plus, BarChart3, TrendingUp, Calendar, DollarSign, Users, AlertCircle, Loader, FileText, Folder, Wand2, Minus, Brain, Play, Camera, Palette, Music, Film, Monitor, Mic, Zap, Settings, Volume2, FileVideo, Maximize, Sun, Scissors, AlertTriangle, Lightbulb, Download, RotateCcw, Edit, Trash2, Eye, Search, Filter, ArrowUpDown, ChevronDown } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getCurrentUser, signOut } from '../lib/supabase';
+import { generateChecklist, ChecklistItem, ConversationMessage } from '../lib/edgeFunctions';
+import AddProjectForm from '../components/AddProjectForm';
 
 interface ProfileData {
   fullName: string;
   email: string;
   mobileNumber: string;
   countryCode: string;
-  upiId: string;
-  aadharNumber: string;
-  freelancerId: string;
+  companyName: string;
+  gstNumber: string;
+  clientId: string;
 }
 
-const FreelancerDashboard: React.FC = () => {
+const ClientDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('profile');
   const [isNewUser, setIsNewUser] = useState(true);
@@ -25,20 +27,54 @@ const FreelancerDashboard: React.FC = () => {
     email: '',
     mobileNumber: '',
     countryCode: '+91',
-    upiId: '',
-    aadharNumber: '',
-    freelancerId: ''
+    companyName: '',
+    gstNumber: '',
+    clientId: ''
   });
   const [originalData, setOriginalData] = useState<ProfileData>({
     fullName: '',
     email: '',
     mobileNumber: '',
     countryCode: '+91',
-    upiId: '',
-    aadharNumber: '',
-    freelancerId: ''
+    companyName: '',
+    gstNumber: '',
+    clientId: ''
   });
   const [errors, setErrors] = useState<Partial<ProfileData>>({});
+
+  // Project creation state
+  const [projectDescription, setProjectDescription] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedChecklist, setGeneratedChecklist] = useState<ChecklistItem[]>([]);
+  const [conversationError, setConversationError] = useState('');
+  
+  // Conversation state
+  const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([]);
+  const [currentResponse, setCurrentResponse] = useState('');
+  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([]);
+  const [isConversationMode, setIsConversationMode] = useState(false);
+  const [conversationComplete, setConversationComplete] = useState(false);
+  const [consultationId, setConsultationId] = useState<string>('');
+  
+  // Project creation form state
+  const [showProjectForm, setShowProjectForm] = useState(false);
+  const [projectFormData, setProjectFormData] = useState({
+    projectName: '',
+    freelancerId: '',
+    completionDate: '',
+    projectAmount: ''
+  });
+  const [projectFormErrors, setProjectFormErrors] = useState({
+    projectName: '',
+    freelancerId: '',
+    completionDate: ''
+  });
+
+  // AI Analysis state
+  const [analysisFile, setAnalysisFile] = useState<File | null>(null);
+  const [analysisResults, setAnalysisResults] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
 
   const countryCodes = [
     { code: '+91', country: 'India', flag: '🇮🇳' },
@@ -53,7 +89,9 @@ const FreelancerDashboard: React.FC = () => {
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
+    { id: 'create-project', label: 'Create Project', icon: Plus },
     { id: 'projects', label: 'My Projects', icon: Briefcase },
+    { id: 'ai-analysis', label: 'AI Analysis', icon: Brain },
     { id: 'transactions', label: 'Transactions', icon: CreditCard },
     { id: 'messages', label: 'Messages', icon: MessageSquare }
   ];
@@ -73,22 +111,23 @@ const FreelancerDashboard: React.FC = () => {
             // Set basic data from auth user
             setProfileData(prev => ({ ...prev, email: user.email || '' }))
             setOriginalData(prev => ({ ...prev, email: user.email || '' }))
-          } else if (profile) {
+          } else if (profile && profile.length > 0) {
             // Set data from database profile
+            const userProfile = profile[0]
             const profileData = {
-              fullName: profile.full_name || '',
+              fullName: userProfile.full_name || '',
               email: user.email || '',
-              mobileNumber: profile.mobile_number || '',
-              countryCode: profile.country_code || '+91',
-              upiId: profile.upi_id || '',
-              aadharNumber: profile.aadhar_number || '',
-              freelancerId: profile.freelancer_id || ''
+              mobileNumber: userProfile.mobile_number || '',
+              countryCode: userProfile.country_code || '+91',
+              companyName: userProfile.company_name || '',
+              gstNumber: userProfile.gst_number || '',
+              clientId: userProfile.client_id || ''
             }
             setProfileData(profileData)
             setOriginalData(profileData)
-            setIsNewUser(!profile.profile_completed)
-            if (profile.updated_at) {
-              setLastUpdated(new Date(profile.updated_at))
+            setIsNewUser(!userProfile.profile_completed)
+            if (userProfile.updated_at) {
+              setLastUpdated(new Date(userProfile.updated_at))
             }
           } else {
             // No profile exists, set basic data
@@ -106,50 +145,38 @@ const FreelancerDashboard: React.FC = () => {
 
   // Calculate profile completion percentage
   const calculateCompletion = () => {
-    const fields = ['fullName', 'mobileNumber', 'upiId', 'aadharNumber'];
+    const fields = ['fullName', 'mobileNumber', 'companyName'];
     const completed = fields.filter(field => profileData[field as keyof ProfileData].trim() !== '').length;
     return Math.round((completed / fields.length) * 100);
   };
 
-  // Generate unique freelancer ID based on email
-  const generateFreelancerId = (email: string) => {
-    // Create a hash from email for consistency
+  // Generate unique client ID based on email
+  const generateClientId = (email: string) => {
     let hash = 0;
     for (let i = 0; i < email.length; i++) {
       const char = email.charCodeAt(i);
       hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = hash & hash;
     }
     
-    // Convert to positive number and ensure 9 digits
     const positiveHash = Math.abs(hash);
     const nineDigitId = String(positiveHash).padStart(9, '0').slice(0, 9);
-    return `F${nineDigitId}`;
+    return `C${nineDigitId}`;
   };
+
   // Handle input changes
   const handleInputChange = (field: keyof ProfileData, value: string) => {
     setProfileData(prev => ({ ...prev, [field]: value }));
     setHasChanges(true);
     
-    // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
-  // Format Aadhar number with hyphens
-  const formatAadhar = (value: string) => {
-    const numbers = value.replace(/\D/g, '');
-    if (numbers.length <= 4) return numbers;
-    if (numbers.length <= 8) return `${numbers.slice(0, 4)}-${numbers.slice(4)}`;
-    return `${numbers.slice(0, 4)}-${numbers.slice(4, 8)}-${numbers.slice(8, 12)}`;
-  };
-
-  // Mask Aadhar number for display
-  const maskAadhar = (aadhar: string) => {
-    if (aadhar.length < 4) return aadhar;
-    const formatted = formatAadhar(aadhar);
-    return formatted.replace(/\d(?=\d{4})/g, 'x');
+  // Format GST number
+  const formatGST = (value: string) => {
+    return value.replace(/[^A-Z0-9]/g, '').slice(0, 15);
   };
 
   // Validate form fields
@@ -166,16 +193,12 @@ const FreelancerDashboard: React.FC = () => {
       newErrors.mobileNumber = 'Please enter a valid 10-digit mobile number';
     }
 
-    if (!profileData.upiId.trim()) {
-      newErrors.upiId = 'UPI ID is required';
-    } else if (!/^[\w.-]+@[\w.-]+$/.test(profileData.upiId)) {
-      newErrors.upiId = 'Please enter a valid UPI ID';
+    if (!profileData.companyName.trim()) {
+      newErrors.companyName = 'Company name is required';
     }
 
-    if (!profileData.aadharNumber.trim()) {
-      newErrors.aadharNumber = 'Aadhar number is required';
-    } else if (!/^\d{12}$/.test(profileData.aadharNumber.replace(/\D/g, ''))) {
-      newErrors.aadharNumber = 'Please enter a valid 12-digit Aadhar number';
+    if (profileData.gstNumber && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(profileData.gstNumber)) {
+      newErrors.gstNumber = 'Please enter a valid GST number';
     }
 
     setErrors(newErrors);
@@ -189,12 +212,12 @@ const FreelancerDashboard: React.FC = () => {
         const { updateUserProfile } = await import('../lib/supabase')
         
         const profileUpdateData = {
-          user_type: 'freelancer',
+          user_type: 'client',
           full_name: profileData.fullName,
           mobile_number: profileData.mobileNumber,
           country_code: profileData.countryCode,
-          upi_id: profileData.upiId,
-          aadhar_number: profileData.aadharNumber,
+          company_name: profileData.companyName,
+          gst_number: profileData.gstNumber,
           profile_completed: true
         }
         
@@ -210,7 +233,7 @@ const FreelancerDashboard: React.FC = () => {
           // Update local state with saved data
           const updatedProfileData = {
             ...profileData,
-            freelancerId: data.freelancer_id || profileData.freelancerId
+            clientId: data.client_id || profileData.clientId
           }
           setProfileData(updatedProfileData)
           setOriginalData(updatedProfileData)
@@ -243,56 +266,342 @@ const FreelancerDashboard: React.FC = () => {
     }
   };
 
+  // Handle checklist generation
+  const handleStartConversation = async () => {
+    if (!projectDescription.trim()) {
+      setConversationError('Please enter a project description first');
+      return;
+    }
+
+    if (projectDescription.trim().length < 50) {
+      setConversationError('Project description must be at least 50 characters long');
+      return;
+    }
+
+    setIsGenerating(true);
+    setConversationError('');
+    setIsConversationMode(true);
+
+    try {
+      const result = await generateChecklist(projectDescription, conversationHistory);
+
+      if (result.success) {
+        if (result.isComplete && result.checklist) {
+          // Conversation complete, show final checklist
+          setGeneratedChecklist(result.checklist);
+          setConversationComplete(true);
+          setIsConversationMode(false);
+          
+          // Save consultation with final checklist
+          await saveConsultationWithChecklist(result);
+        } else {
+          // Continue conversation
+          setCurrentResponse(result.response || '');
+          setFollowUpQuestions(result.followUpQuestions || []);
+          setConversationHistory(result.conversationHistory || []);
+          
+          // Save consultation progress
+          await saveConsultationProgress(projectDescription, result.conversationHistory || []);
+        }
+        setConversationError('');
+      } else {
+        setConversationError(result.error || 'Failed to start conversation');
+        setIsConversationMode(false);
+      }
+    } catch (error) {
+      console.error('Error starting conversation:', error);
+      setConversationError('An unexpected error occurred while starting the conversation');
+      setIsConversationMode(false);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Handle conversation continuation
+  const handleContinueConversation = async (response: string) => {
+    if (!response.trim()) {
+      setConversationError('Please provide a response');
+      return;
+    }
+
+    setIsGenerating(true);
+    setConversationError('');
+
+    try {
+      const result = await generateChecklist(response, conversationHistory);
+
+      if (result.success) {
+        if (result.isComplete && result.checklist) {
+          // Conversation complete, show final checklist
+          setGeneratedChecklist(result.checklist);
+          setConversationComplete(true);
+          setIsConversationMode(false);
+          
+          // Save consultation with final checklist
+          await saveConsultationWithChecklist(result);
+        } else {
+          // Continue conversation
+          setCurrentResponse(result.response || '');
+          setFollowUpQuestions(result.followUpQuestions || []);
+          setConversationHistory(result.conversationHistory || []);
+          
+          // Save consultation progress
+          await saveConsultationProgress(response, result.conversationHistory || []);
+        }
+        setConversationError('');
+      } else {
+        setConversationError(result.error || 'Failed to continue conversation');
+      }
+    } catch (error) {
+      console.error('Error continuing conversation:', error);
+      setConversationError('An unexpected error occurred while continuing the conversation');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Handle generating final checklist
+  const handleGenerateFinalChecklist = async () => {
+    setIsGenerating(true);
+    setConversationError('');
+
+    try {
+      const result = await generateChecklist(
+        'Please generate the final checklist based on our conversation',
+        conversationHistory,
+        true // Force final generation
+      );
+
+      if (result.success && result.checklist) {
+        setGeneratedChecklist(result.checklist);
+        setConversationComplete(true);
+        setIsConversationMode(false);
+        
+        // Save consultation with final checklist
+        await saveConsultationWithChecklist(result);
+      } else {
+        setConversationError(result.error || 'Failed to generate final checklist');
+      }
+    } catch (error) {
+      console.error('Error generating final checklist:', error);
+      setConversationError('An unexpected error occurred while generating the final checklist');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Reset conversation
+  const handleResetConversation = () => {
+    setProjectDescription('');
+    setConversationHistory([]);
+    setCurrentResponse('');
+    setFollowUpQuestions([]);
+    setIsConversationMode(false);
+    setConversationComplete(false);
+    setGeneratedChecklist([]);
+    setConversationError('');
+    setConsultationId('');
+    setShowProjectForm(false);
+    setProjectFormData({
+      projectName: '',
+      freelancerId: '',
+      completionDate: '',
+      projectAmount: ''
+    });
+    setProjectFormErrors({
+      projectName: '',
+      freelancerId: '',
+      completionDate: ''
+    });
+  };
+
+  // Save consultation progress to database
+  const saveConsultationProgress = async (description: string, history: ConversationMessage[]) => {
+    try {
+      const { saveConsultationProgress } = await import('../lib/supabase');
+      await saveConsultationProgress(description, history);
+    } catch (error) {
+      console.error('Error saving consultation progress:', error);
+    }
+  };
+
+  // Save consultation with final checklist
+  const saveConsultationWithChecklist = async (result: any) => {
+    try {
+      const { saveConsultationProgress } = await import('../lib/supabase');
+      const { data } = await saveConsultationProgress(
+        projectDescription,
+        result.conversationHistory || [],
+        result,
+        true
+      );
+      
+      if (data?.consultation_id) {
+        setConsultationId(data.consultation_id);
+        setShowProjectForm(true);
+      }
+    } catch (error) {
+      console.error('Error saving consultation with checklist:', error);
+      setConversationError('Failed to save consultation data');
+    }
+  };
+
+  // Get tomorrow's date in YYYY-MM-DD format
+  const getTomorrowDate = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().split('T')[0];
+  };
+
+  // Validate project form
+  const validateProjectForm = () => {
+    const newErrors = {
+      projectName: '',
+      freelancerId: '',
+      completionDate: ''
+    };
+
+    if (!projectFormData.projectName.trim()) {
+      newErrors.projectName = 'Project name is required';
+    }
+
+    if (projectFormData.freelancerId && !/^F\d{9}$/.test(projectFormData.freelancerId)) {
+      newErrors.freelancerId = 'Freelancer ID must be in format F123456789';
+    }
+
+    if (!projectFormData.completionDate) {
+      newErrors.completionDate = 'Completion date is required';
+    } else {
+      const selectedDate = new Date(projectFormData.completionDate);
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      if (selectedDate < tomorrow) {
+        newErrors.completionDate = 'Completion date must be at least tomorrow';
+      }
+    }
+
+    setProjectFormErrors(newErrors);
+    return !Object.values(newErrors).some(error => error !== '');
+  };
+
+  // Handle project creation from consultation
+  const handleCreateProjectFromConsultation = async () => {
+    if (!validateProjectForm()) {
+      return;
+    }
+
+    try {
+      const { createProjectFromConsultation } = await import('../lib/supabase');
+      
+      const { data, error } = await createProjectFromConsultation(
+        consultationId,
+        projectFormData.projectName,
+        projectFormData.freelancerId || undefined,
+        projectFormData.completionDate,
+        projectFormData.projectAmount ? parseFloat(projectFormData.projectAmount) : undefined
+      );
+      
+      if (error) {
+        console.error('Error creating project:', error);
+        setConversationError('Failed to create project. Please try again.');
+        return;
+      }
+      
+      if (data) {
+        // Reset form and switch to projects tab
+        handleResetConversation();
+        setActiveTab('projects');
+        
+        // Clear any errors
+        setConversationError('');
+      }
+    } catch (error) {
+      console.error('Error creating project:', error);
+      setConversationError('An unexpected error occurred while creating the project');
+    }
+  };
+
+  // Handle project form input changes
+  const handleProjectFormChange = (field: string, value: string) => {
+    setProjectFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Clear error when user starts typing
+    if (projectFormErrors[field as keyof typeof projectFormErrors]) {
+      setProjectFormErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  // Format Freelancer ID input
+  const handleFreelancerIdChange = (value: string) => {
+    // Remove any non-digit characters except F at the beginning
+    let formatted = value.replace(/[^F\d]/g, '');
+    
+    // Ensure it starts with F
+    if (!formatted.startsWith('F') && formatted.length > 0) {
+      formatted = 'F' + formatted.replace(/F/g, '');
+    }
+    
+    // Limit to F + 9 digits
+    if (formatted.length > 10) {
+      formatted = formatted.substring(0, 10);
+    }
+    
+    handleProjectFormChange('freelancerId', formatted);
+  };
+
+  // Get priority color
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'high': return 'text-red-400 bg-red-900/20 border-red-500/30';
+      case 'medium': return 'text-yellow-400 bg-yellow-900/20 border-yellow-500/30';
+      case 'low': return 'text-green-400 bg-green-900/20 border-green-500/30';
+      default: return 'text-gray-400 bg-gray-900/20 border-gray-500/30';
+    }
+  };
+
+  // Get category color
+  const getCategoryColor = (category: string) => {
+    switch (category.toLowerCase()) {
+      case 'technical': return 'text-blue-400 bg-blue-900/20';
+      case 'creative': return 'text-purple-400 bg-purple-900/20';
+      case 'content': return 'text-green-400 bg-green-900/20';
+      case 'delivery': return 'text-cyan-400 bg-cyan-900/20';
+      case 'quality': return 'text-pink-400 bg-pink-900/20';
+      default: return 'text-gray-400 bg-gray-900/20';
+    }
+  };
+
   const renderProfileContent = () => (
     <div className="space-y-6 sm:space-y-8">
       {/* Welcome Banner for New Users */}
       {isNewUser && (
-        <div 
-          className="bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border border-cyan-500/30 rounded-2xl p-4 sm:p-6"
-          role="alert"
-          aria-live="polite"
-        >
+        <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/30 rounded-2xl p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-start space-y-3 sm:space-y-0 sm:space-x-4">
             <div className="flex-shrink-0">
-              <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-cyan-400" aria-hidden="true" />
+              <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-purple-400" />
             </div>
             <div className="flex-1">
               <h2 className="text-lg sm:text-xl font-semibold text-white mb-2">
                 Welcome to SecureServe! 🎉
               </h2>
               <p className="text-sm sm:text-base text-gray-300 mb-4">
-                Please complete your profile information to get started with projects and receive secure payments.
+                Please complete your profile information to start creating projects and hiring freelancers.
               </p>
               <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
                 <div className="flex items-center space-x-2 w-full sm:w-auto">
-                  <div className="flex-1 sm:w-32 bg-gray-700 rounded-full h-2" role="progressbar" aria-valuenow={calculateCompletion()} aria-valuemin={0} aria-valuemax={100} aria-label="Profile completion progress">
+                  <div className="flex-1 sm:w-32 bg-gray-700 rounded-full h-2">
                     <div 
-                      className="bg-gradient-to-r from-cyan-400 to-purple-400 h-2 rounded-full transition-all duration-500"
+                      className="bg-gradient-to-r from-purple-400 to-pink-400 h-2 rounded-full transition-all duration-500"
                       style={{ width: `${calculateCompletion()}%` }}
                     ></div>
                   </div>
-                  <span className="text-sm font-medium text-cyan-400 whitespace-nowrap">
+                  <span className="text-sm font-medium text-purple-400 whitespace-nowrap">
                     {calculateCompletion()}% Complete
                   </span>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Last Updated Info for Returning Users */}
-      {!isNewUser && lastUpdated && (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-gray-800 rounded-lg p-4 border border-gray-700 space-y-2 sm:space-y-0">
-          <div className="flex items-center space-x-2">
-            <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400" aria-hidden="true" />
-            <span className="text-sm sm:text-base text-gray-300">
-              Last updated: {lastUpdated.toLocaleDateString()} at {lastUpdated.toLocaleTimeString()}
-            </span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-400" aria-hidden="true" />
-            <span className="text-sm sm:text-base text-green-400 font-medium">Profile Complete</span>
           </div>
         </div>
       )}
@@ -304,107 +613,79 @@ const FreelancerDashboard: React.FC = () => {
           {!isEditing && (
             <button
               onClick={() => setIsEditing(true)}
-              className="flex items-center justify-center space-x-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 focus:bg-cyan-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 w-full sm:w-auto"
-              aria-label="Edit profile information"
+              className="flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 w-full sm:w-auto"
             >
-              <Edit3 className="h-4 w-4" aria-hidden="true" />
+              <Edit3 className="h-4 w-4" />
               <span>Edit Profile</span>
             </button>
           )}
         </div>
 
-        <form className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8" noValidate>
-          {/* Freelancer ID */}
+        <form className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+          {/* Client ID */}
           <div className="lg:col-span-2">
-            <label htmlFor="freelancer-id" className="block text-gray-300 text-sm font-semibold mb-2">
-              Freelancer ID
+            <label className="block text-gray-300 text-sm font-semibold mb-2">
+              Client ID
             </label>
             <div className="relative">
               <input
-                id="freelancer-id"
-                name="freelancerId"
                 type="text"
-                value={profileData.freelancerId || 'Will be assigned after profile completion'}
+                value={profileData.clientId || 'Will be assigned after profile completion'}
                 disabled
                 className="w-full px-4 py-3 pr-12 border-2 border-gray-600 rounded-lg bg-gray-600 text-gray-300 cursor-not-allowed opacity-60 text-sm sm:text-base"
-                aria-describedby="freelancer-id-help"
-                tabIndex={-1}
               />
               <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                <Shield className="h-5 w-5 text-cyan-400" aria-hidden="true" />
+                <Shield className="h-5 w-5 text-purple-400" />
               </div>
             </div>
-            <p id="freelancer-id-help" className="text-gray-400 text-xs sm:text-sm mt-1">
-              {profileData.freelancerId 
-                ? 'Your unique freelancer identification number' 
-                : 'ID will be automatically generated when you complete your profile'
-              }
-            </p>
           </div>
 
           {/* Full Name */}
           <div>
-            <label htmlFor="full-name" className="block text-gray-300 text-sm font-semibold mb-2">
+            <label className="block text-gray-300 text-sm font-semibold mb-2">
               Full Name *
             </label>
             <input
-              id="full-name"
-              name="fullName"
               type="text"
               value={profileData.fullName}
               onChange={(e) => handleInputChange('fullName', e.target.value)}
-              placeholder="Enter your full legal name"
+              placeholder="Enter your full name"
               disabled={!isEditing}
-              required
-              aria-invalid={errors.fullName ? 'true' : 'false'}
-              aria-describedby={errors.fullName ? 'full-name-error' : undefined}
               className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
                 errors.fullName 
                   ? 'border-red-500 focus:border-red-400' 
-                  : 'border-gray-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/50'
+                  : 'border-gray-600 focus:border-purple-400'
               } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
             />
             {errors.fullName && (
-              <p id="full-name-error" className="text-red-400 text-xs sm:text-sm mt-1" role="alert">
-                {errors.fullName}
-              </p>
+              <p className="text-red-400 text-xs sm:text-sm mt-1">{errors.fullName}</p>
             )}
           </div>
 
           {/* Email Address (Read-only) */}
           <div>
-            <label htmlFor="email" className="block text-gray-300 text-sm font-semibold mb-2">
+            <label className="block text-gray-300 text-sm font-semibold mb-2">
               Email Address
             </label>
             <input
-              id="email"
-              name="email"
               type="email"
               value={profileData.email}
               disabled
               className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg bg-gray-600 text-gray-300 cursor-not-allowed opacity-60 text-sm sm:text-base"
-              aria-describedby="email-help"
-              tabIndex={-1}
             />
-            <p id="email-help" className="text-gray-400 text-xs sm:text-sm mt-1">Email cannot be changed</p>
           </div>
 
           {/* Mobile Number */}
           <div>
-            <label htmlFor="mobile-number" className="block text-gray-300 text-sm font-semibold mb-2">
+            <label className="block text-gray-300 text-sm font-semibold mb-2">
               Mobile Number *
             </label>
             <div className="flex space-x-2">
               <select
-                id="country-code"
-                name="countryCode"
                 value={profileData.countryCode}
                 onChange={(e) => handleInputChange('countryCode', e.target.value)}
                 disabled={!isEditing}
-                aria-label="Country code"
-                className={`px-2 sm:px-3 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white text-sm sm:text-base ${
-                  'border-gray-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/50'
-                } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
+                className={`px-2 sm:px-3 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white text-sm sm:text-base border-gray-600 focus:border-purple-400 ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
               >
                 {countryCodes.map((country) => (
                   <option key={country.code} value={country.code}>
@@ -413,104 +694,66 @@ const FreelancerDashboard: React.FC = () => {
                 ))}
               </select>
               <input
-                id="mobile-number"
-                name="mobileNumber"
                 type="tel"
                 value={profileData.mobileNumber}
                 onChange={(e) => handleInputChange('mobileNumber', e.target.value.replace(/\D/g, '').slice(0, 10))}
                 placeholder="Enter 10-digit mobile number"
                 disabled={!isEditing}
-                required
                 maxLength={10}
-                aria-invalid={errors.mobileNumber ? 'true' : 'false'}
-                aria-describedby={errors.mobileNumber ? 'mobile-error' : undefined}
                 className={`flex-1 px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
                   errors.mobileNumber 
                     ? 'border-red-500 focus:border-red-400' 
-                    : 'border-gray-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/50'
+                    : 'border-gray-600 focus:border-purple-400'
                 } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
               />
             </div>
             {errors.mobileNumber && (
-              <p id="mobile-error" className="text-red-400 text-xs sm:text-sm mt-1" role="alert">
-                {errors.mobileNumber}
-              </p>
+              <p className="text-red-400 text-xs sm:text-sm mt-1">{errors.mobileNumber}</p>
             )}
           </div>
 
-          {/* UPI ID */}
+          {/* Company Name */}
           <div>
-            <label htmlFor="upi-id" className="block text-gray-300 text-sm font-semibold mb-2">
-              UPI ID *
+            <label className="block text-gray-300 text-sm font-semibold mb-2">
+              Company Name *
             </label>
             <input
-              id="upi-id"
-              name="upiId"
               type="text"
-              value={profileData.upiId}
-              onChange={(e) => handleInputChange('upiId', e.target.value)}
-              placeholder="yourname@paytm, 9876543210@ybl"
+              value={profileData.companyName}
+              onChange={(e) => handleInputChange('companyName', e.target.value)}
+              placeholder="Enter your company name"
               disabled={!isEditing}
-              required
-              aria-invalid={errors.upiId ? 'true' : 'false'}
-              aria-describedby={`upi-help ${errors.upiId ? 'upi-error' : ''}`.trim()}
               className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
-                errors.upiId 
+                errors.companyName 
                   ? 'border-red-500 focus:border-red-400' 
-                  : 'border-gray-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/50'
+                  : 'border-gray-600 focus:border-purple-400'
               } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
             />
-            <p id="upi-help" className="text-gray-400 text-xs sm:text-sm mt-1">
-              Example: yourname@paytm, 9876543210@ybl
-            </p>
-            {errors.upiId && (
-              <p id="upi-error" className="text-red-400 text-xs sm:text-sm mt-1" role="alert">
-                {errors.upiId}
-              </p>
+            {errors.companyName && (
+              <p className="text-red-400 text-xs sm:text-sm mt-1">{errors.companyName}</p>
             )}
           </div>
 
-          {/* Aadhar Card Number */}
+          {/* GST Number (Optional) */}
           <div className="lg:col-span-2">
-            <label htmlFor="aadhar-number" className="block text-gray-300 text-sm font-semibold mb-2">
-              Aadhar Card Number *
+            <label className="block text-gray-300 text-sm font-semibold mb-2">
+              GST Number (Optional)
             </label>
-            <div className="relative">
-              <input
-                id="aadhar-number"
-                name="aadharNumber"
-                type="text"
-                value={isEditing ? formatAadhar(profileData.aadharNumber) : maskAadhar(profileData.aadharNumber)}
-                onChange={(e) => {
-                  const numbers = e.target.value.replace(/\D/g, '');
-                  handleInputChange('aadharNumber', numbers);
-                }}
-                placeholder="xxxx-xxxx-xxxx"
-                disabled={!isEditing}
-                maxLength={14}
-                required
-                aria-invalid={errors.aadharNumber ? 'true' : 'false'}
-                aria-describedby={`aadhar-help ${errors.aadharNumber ? 'aadhar-error' : ''}`.trim()}
-                className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
-                  errors.aadharNumber 
-                    ? 'border-red-500 focus:border-red-400' 
-                    : 'border-gray-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/50'
-                } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
-              />
-              <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                <Shield className="h-5 w-5 text-green-400" aria-hidden="true" />
-              </div>
-            </div>
-            <div className="flex items-center space-x-2 mt-1">
-              <Shield className="h-4 w-4 text-green-400" aria-hidden="true" />
-              <p id="aadhar-help" className="text-green-400 text-xs sm:text-sm">
-                Your Aadhar details are encrypted and secure
-              </p>
-            </div>
-            {errors.aadharNumber && (
-              <p id="aadhar-error" className="text-red-400 text-xs sm:text-sm mt-1" role="alert">
-                {errors.aadharNumber}
-              </p>
+            <input
+              type="text"
+              value={profileData.gstNumber}
+              onChange={(e) => handleInputChange('gstNumber', formatGST(e.target.value))}
+              placeholder="22AAAAA0000A1Z5"
+              disabled={!isEditing}
+              maxLength={15}
+              className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
+                errors.gstNumber 
+                  ? 'border-red-500 focus:border-red-400' 
+                  : 'border-gray-600 focus:border-purple-400'
+              } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
+            />
+            {errors.gstNumber && (
+              <p className="text-red-400 text-xs sm:text-sm mt-1">{errors.gstNumber}</p>
             )}
           </div>
         </form>
@@ -520,30 +763,355 @@ const FreelancerDashboard: React.FC = () => {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end space-y-3 sm:space-y-0 sm:space-x-4 mt-6 sm:mt-8 pt-6 border-t border-gray-700">
             <button
               onClick={handleCancel}
-              className="flex items-center justify-center space-x-2 px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 focus:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
-              type="button"
-              aria-label="Cancel profile changes"
+              className="flex items-center justify-center space-x-2 px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
             >
-              <X className="h-4 w-4" aria-hidden="true" />
+              <X className="h-4 w-4" />
               <span>Cancel</span>
             </button>
             <button
               onClick={handleSave}
               disabled={!hasChanges}
-              type="button"
-              aria-label="Save profile changes"
               className={`flex items-center justify-center space-x-2 px-6 py-3 rounded-lg transition-colors focus:outline-none focus:ring-2 ${
                 hasChanges 
-                  ? 'bg-cyan-600 hover:bg-cyan-700 focus:bg-cyan-700 text-white focus:ring-cyan-400' 
+                  ? 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-400' 
                   : 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
               }`}
             >
-              <Save className="h-4 w-4" aria-hidden="true" />
+              <Save className="h-4 w-4" />
               <span>Save Changes</span>
             </button>
           </div>
         )}
       </div>
+    </div>
+  );
+
+  const renderCreateProjectContent = () => (
+    <div className="space-y-6 sm:space-y-8">
+      {/* Project Description Form */}
+      <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
+        <div className="mb-6 sm:mb-8">
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">
+            {isConversationMode ? 'Video Project Consultation' : 'Create New Video Project'}
+          </h2>
+          <p className="text-sm sm:text-base text-gray-300">
+            {isConversationMode 
+              ? 'Our AI consultant will ask follow-up questions to create the perfect checklist for your project.'
+              : 'Describe your video project requirements and our AI consultant will help you create a detailed checklist.'
+            }
+          </p>
+        </div>
+
+        <div className="space-y-6">
+          {!isConversationMode ? (
+            /* Initial Project Description */
+            <div>
+              <label htmlFor="project-description" className="block text-gray-300 text-sm font-semibold mb-2">
+                Project Description *
+              </label>
+              <textarea
+                id="project-description"
+                rows={6}
+                value={projectDescription}
+                onChange={(e) => setProjectDescription(e.target.value)}
+                placeholder="Describe your video project in detail. Include the purpose, target audience, style preferences, duration, specific elements needed, and any other requirements..."
+                className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-400/50 bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base resize-none"
+                disabled={isGenerating}
+              />
+              <div className="flex justify-between items-center mt-1">
+                <p className="text-gray-400 text-xs sm:text-sm">
+                  Minimum 50 characters required to start consultation
+                </p>
+                <span className={`text-xs sm:text-sm ${
+                  projectDescription.length >= 50 ? 'text-green-400' : 'text-gray-400'
+                }`}>
+                  {projectDescription.length}/50
+                </span>
+              </div>
+            </div>
+          ) : (
+            /* Conversation Interface */
+            <ConversationInterface 
+              currentResponse={currentResponse}
+              followUpQuestions={followUpQuestions}
+              conversationHistory={conversationHistory}
+              onContinueConversation={handleContinueConversation}
+              onGenerateFinalChecklist={handleGenerateFinalChecklist}
+              isGenerating={isGenerating}
+            />
+          )}
+
+          {/* Error Display */}
+          {conversationError && (
+            <div className="p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
+              <p className="text-red-400 text-sm flex items-center">
+                <AlertCircle className="h-4 w-4 mr-2" />
+                {conversationError}
+              </p>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          {!isConversationMode && (
+            <div className="pt-4 border-t border-gray-700">
+              <button
+                onClick={handleStartConversation}
+                disabled={isGenerating || projectDescription.trim().length < 50}
+                className={`w-full flex items-center justify-center space-x-2 py-3 sm:py-4 rounded-lg font-semibold text-base sm:text-lg transition-colors focus:outline-none focus:ring-2 ${
+                  isGenerating || projectDescription.trim().length < 50
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-400'
+                }`}
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader className="h-5 w-5 sm:h-6 sm:w-6 animate-spin" />
+                    <span>Starting Consultation...</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
+                    <span>Start AI Consultation</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Generated Checklist Display */}
+      {conversationComplete && generatedChecklist.length > 0 && !showProjectForm && (
+        <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
+          <div className="mb-6 sm:mb-8">
+            <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">
+              AI-Generated Project Checklist
+            </h3>
+            <p className="text-sm sm:text-base text-gray-300">
+              Review this checklist and proceed to create your project. Each item will be verified by our AI system.
+            </p>
+          </div>
+
+          {/* Checklist Stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <div className="bg-gray-700 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-purple-400">{generatedChecklist.length}</div>
+              <div className="text-sm text-gray-300">Total Items</div>
+            </div>
+            <div className="bg-gray-700 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-green-400">
+                {generatedChecklist.filter(item => item.verifiable).length}
+              </div>
+              <div className="text-sm text-gray-300">AI Verifiable</div>
+            </div>
+            <div className="bg-gray-700 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-red-400">
+                {generatedChecklist.filter(item => item.priority === 'high').length}
+              </div>
+              <div className="text-sm text-gray-300">High Priority</div>
+            </div>
+          </div>
+
+          {/* Checklist Items */}
+          <div className="space-y-4">
+            {generatedChecklist.map((item, index) => (
+              <div
+                key={item.id}
+                className="bg-gray-700 rounded-lg p-4 border border-gray-600 hover:border-gray-500 transition-colors"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center space-x-3">
+                    <div className="flex-shrink-0 w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <h4 className="text-white font-semibold">{item.requirement}</h4>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(item.category)}`}>
+                          {item.category}
+                        </span>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getPriorityColor(item.priority)}`}>
+                          {item.priority.toUpperCase()}
+                        </span>
+                        {item.verifiable && (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium text-green-400 bg-green-900/20 border border-green-500/30">
+                            AI VERIFIABLE
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-gray-300 text-sm leading-relaxed ml-11">
+                  {item.description}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end space-y-3 sm:space-y-0 sm:space-x-4 mt-6 sm:mt-8 pt-6 border-t border-gray-700">
+            <button
+              onClick={() => {
+                handleResetConversation();
+              }}
+              className="flex items-center justify-center space-x-2 px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
+            >
+              <X className="h-4 w-4" />
+              <span>Start Over</span>
+            </button>
+            <button
+              onClick={() => setShowProjectForm(true)}
+              className="flex items-center justify-center space-x-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
+            >
+              <CheckCircle className="h-4 w-4" />
+              <span>Proceed to Create Project</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Project Creation Form */}
+      {showProjectForm && generatedChecklist.length > 0 && (
+        <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
+          <div className="mb-6 sm:mb-8">
+            <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">
+              Create Your Project
+            </h3>
+            <p className="text-sm sm:text-base text-gray-300">
+              Fill in the project details to create your project with the AI-generated checklist.
+            </p>
+          </div>
+
+          <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); handleCreateProjectFromConsultation(); }}>
+            {/* Project Name */}
+            <div>
+              <label htmlFor="project-name" className="block text-gray-300 text-sm font-semibold mb-2">
+                Project Name *
+              </label>
+              <input
+                id="project-name"
+                type="text"
+                value={projectFormData.projectName}
+                onChange={(e) => handleProjectFormChange('projectName', e.target.value)}
+                placeholder="Enter your project name"
+                className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
+                  projectFormErrors.projectName 
+                    ? 'border-red-500 focus:border-red-400' 
+                    : 'border-gray-600 focus:border-purple-400'
+                }`}
+              />
+              {projectFormErrors.projectName && (
+                <p className="text-red-400 text-xs sm:text-sm mt-1">{projectFormErrors.projectName}</p>
+              )}
+            </div>
+
+            {/* Freelancer ID (Optional) */}
+            <div>
+              <label htmlFor="freelancer-id" className="block text-gray-300 text-sm font-semibold mb-2">
+                Freelancer ID (Optional)
+              </label>
+              <input
+                id="freelancer-id"
+                type="text"
+                value={projectFormData.freelancerId}
+                onChange={(e) => handleFreelancerIdChange(e.target.value)}
+                placeholder="F123456789"
+                maxLength={10}
+                className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
+                  projectFormErrors.freelancerId 
+                    ? 'border-red-500 focus:border-red-400' 
+                    : 'border-gray-600 focus:border-purple-400'
+                }`}
+              />
+              <p className="text-gray-400 text-xs sm:text-sm mt-1">
+                Leave empty to assign freelancer later
+              </p>
+              {projectFormErrors.freelancerId && (
+                <p className="text-red-400 text-xs sm:text-sm mt-1">{projectFormErrors.freelancerId}</p>
+              )}
+            </div>
+
+            {/* Completion Date */}
+            <div>
+              <label htmlFor="completion-date" className="block text-gray-300 text-sm font-semibold mb-2">
+                Desired Completion Date *
+              </label>
+              <input
+                id="completion-date"
+                type="date"
+                value={projectFormData.completionDate}
+                onChange={(e) => handleProjectFormChange('completionDate', e.target.value)}
+                min={getTomorrowDate()}
+                className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white text-sm sm:text-base ${
+                  projectFormErrors.completionDate 
+                    ? 'border-red-500 focus:border-red-400' 
+                    : 'border-gray-600 focus:border-purple-400'
+                }`}
+              />
+              {projectFormErrors.completionDate && (
+                <p className="text-red-400 text-xs sm:text-sm mt-1">{projectFormErrors.completionDate}</p>
+              )}
+            </div>
+
+            {/* Project Amount (Optional) */}
+            <div>
+              <label htmlFor="project-amount" className="block text-gray-300 text-sm font-semibold mb-2">
+                Project Budget (Optional)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">₹</span>
+                <input
+                  id="project-amount"
+                  type="number"
+                  value={projectFormData.projectAmount}
+                  onChange={(e) => handleProjectFormChange('projectAmount', e.target.value)}
+                  placeholder="0"
+                  min="0"
+                  step="100"
+                  className="w-full pl-8 pr-4 py-3 border-2 border-gray-600 rounded-lg focus:outline-none focus:border-purple-400 bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base"
+                />
+              </div>
+              <p className="text-gray-400 text-xs sm:text-sm mt-1">
+                Leave empty to negotiate with freelancer
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end space-y-3 sm:space-y-0 sm:space-x-4 pt-6 border-t border-gray-700">
+              <button
+                type="button"
+                onClick={() => setShowProjectForm(false)}
+                className="flex items-center justify-center space-x-2 px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
+              >
+                <X className="h-4 w-4" />
+                <span>Back to Checklist</span>
+              </button>
+              <button
+                type="submit"
+                disabled={isGenerating}
+                className={`flex items-center justify-center space-x-2 px-6 py-3 rounded-lg transition-colors focus:outline-none focus:ring-2 ${
+                  isGenerating
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-400'
+                }`}
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader className="h-4 w-4 animate-spin" />
+                    <span>Creating Project...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Create Project</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 
@@ -555,166 +1123,108 @@ const FreelancerDashboard: React.FC = () => {
           <div>
             <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">My Projects</h2>
             <p className="text-sm sm:text-base text-gray-300">
-              Manage and track your active and completed projects
+              Manage and track your projects with freelancers
             </p>
           </div>
-          <div className="flex items-center space-x-2 text-sm text-gray-400">
-            <Briefcase className="h-4 w-4" aria-hidden="true" />
-            <span>0 Total Projects</span>
+          <button
+            onClick={() => setActiveTab('create-project')}
+            className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 w-full sm:w-auto justify-center"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Create Project</span>
+          </button>
+        </div>
+
+        {/* Project Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+          <div className="bg-gray-700 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-purple-400">0</div>
+            <div className="text-sm text-gray-300">Total Projects</div>
+          </div>
+          <div className="bg-gray-700 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-blue-400">0</div>
+            <div className="text-sm text-gray-300">Active Projects</div>
+          </div>
+          <div className="bg-gray-700 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-green-400">0</div>
+            <div className="text-sm text-gray-300">Completed</div>
+          </div>
+          <div className="bg-gray-700 rounded-lg p-4 text-center">
+            <div className="text-2xl font-bold text-yellow-400">₹0</div>
+            <div className="text-sm text-gray-300">Total Spent</div>
           </div>
         </div>
 
         {/* Projects Table */}
         <div className="overflow-x-auto">
-          <div className="min-w-full">
-            {/* Table Header */}
-            <div className="bg-gray-700 rounded-t-lg">
-              <div className="grid grid-cols-7 gap-4 p-4 text-sm font-semibold text-gray-300">
-                <div className="text-left">Project ID</div>
-                <div className="text-left">Project Name</div>
-                <div className="text-left">Client ID</div>
-                <div className="text-center">Status</div>
-                <div className="text-center">Deliverable List</div>
-                <div className="text-center">Work Product</div>
-                <div className="text-center">Verification Report</div>
-              </div>
-            </div>
-
-            {/* Table Body - Empty State */}
-            <div className="bg-gray-800 rounded-b-lg border-t border-gray-600">
-              <div className="p-8 sm:p-12 text-center">
-                <div className="flex flex-col items-center space-y-4">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-700 rounded-full flex items-center justify-center">
-                    <Briefcase className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" aria-hidden="true" />
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-600">
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Project Name</th>
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Status</th>
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Freelancer</th>
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Due Date</th>
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Amount</th>
+                <th className="text-left py-3 px-4 text-gray-300 font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Empty state */}
+              <tr>
+                <td colSpan={6} className="text-center py-12">
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-700 rounded-full flex items-center justify-center">
+                      <Briefcase className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-lg sm:text-xl font-semibold text-white">
+                        No Projects Yet
+                      </h3>
+                      <p className="text-sm sm:text-base text-gray-400 max-w-md">
+                        Create your first project to start working with freelancers. 
+                        Our AI will help you define clear requirements and manage deliverables.
+                      </p>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <h3 className="text-lg sm:text-xl font-semibold text-white">
-                      No Projects Yet
-                    </h3>
-                    <p className="text-sm sm:text-base text-gray-400 max-w-md">
-                      Your projects will appear here once clients start hiring you. 
-                      Make sure your profile is complete to attract more clients.
-                    </p>
-                  </div>
-                  <div className="pt-4">
-                    <button
-                      onClick={() => setActiveTab('profile')}
-                      className="inline-flex items-center space-x-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 focus:bg-cyan-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                      aria-label="Complete your profile"
-                    >
-                      <User className="h-4 w-4" aria-hidden="true" />
-                      <span>Complete Profile</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         {/* Status Legend */}
         <div className="mt-6 p-4 bg-gray-700 rounded-lg">
-          <h4 className="text-sm font-semibold text-gray-300 mb-3">Project Status Legend:</h4>
+          <h4 className="text-sm font-semibold text-gray-300 mb-3">Project Status:</h4>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs sm:text-sm">
             <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-              <span className="text-gray-300">Complete</span>
+              <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
+              <span className="text-gray-300">Draft</span>
             </div>
             <div className="flex items-center space-x-2">
               <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
               <span className="text-gray-300">Active</span>
             </div>
             <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-              <span className="text-gray-300">Manual Revision</span>
+              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+              <span className="text-gray-300">Completed</span>
             </div>
             <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-              <span className="text-gray-300">Approval Pending</span>
+              <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+              <span className="text-gray-300">Cancelled</span>
             </div>
           </div>
         </div>
       </div>
     </div>
-  );
+  )
 
   const renderTransactionsContent = () => (
     <div className="space-y-6 sm:space-y-8">
-      {/* Transactions Header */}
       <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 space-y-4 sm:space-y-0">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Transaction History</h2>
-            <p className="text-sm sm:text-base text-gray-300">
-              View your payment history and completed transactions
-            </p>
-          </div>
-          <div className="flex items-center space-x-2 text-sm text-gray-400">
-            <CreditCard className="h-4 w-4" aria-hidden="true" />
-            <span>₹0 Total Earned</span>
-          </div>
-        </div>
-
-        {/* Transactions Table */}
-        <div className="overflow-x-auto">
-          <div className="min-w-full">
-            {/* Table Header */}
-            <div className="bg-gray-700 rounded-t-lg">
-              <div className="grid grid-cols-5 gap-4 p-4 text-sm font-semibold text-gray-300">
-                <div className="text-left">Project ID</div>
-                <div className="text-left">Project Name</div>
-                <div className="text-left">Client ID</div>
-                <div className="text-right">Value (₹)</div>
-                <div className="text-center">Value Status</div>
-              </div>
-            </div>
-
-            {/* Table Body - Empty State */}
-            <div className="bg-gray-800 rounded-b-lg border-t border-gray-600">
-              <div className="p-8 sm:p-12 text-center">
-                <div className="flex flex-col items-center space-y-4">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-700 rounded-full flex items-center justify-center">
-                    <CreditCard className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" aria-hidden="true" />
-                  </div>
-                  <div className="space-y-2">
-                    <h3 className="text-lg sm:text-xl font-semibold text-white">
-                      No Transactions Yet
-                    </h3>
-                    <p className="text-sm sm:text-base text-gray-400 max-w-md">
-                      Your payment history will appear here once you complete projects and receive payments. 
-                      All transactions are secure and processed instantly.
-                    </p>
-                  </div>
-                  <div className="pt-4">
-                    <button
-                      onClick={() => setActiveTab('projects')}
-                      className="inline-flex items-center space-x-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 focus:bg-cyan-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                      aria-label="View your projects"
-                    >
-                      <Briefcase className="h-4 w-4" aria-hidden="true" />
-                      <span>View Projects</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Transaction Summary */}
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-gray-700 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-green-400">₹0</div>
-            <div className="text-sm text-gray-300">Total Earned</div>
-          </div>
-          <div className="bg-gray-700 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-blue-400">0</div>
-            <div className="text-sm text-gray-300">Completed Projects</div>
-          </div>
-          <div className="bg-gray-700 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-purple-400">₹0</div>
-            <div className="text-sm text-gray-300">Average Project Value</div>
-          </div>
+        <div className="text-center py-12">
+          <CreditCard className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-white mb-2">No Transactions Yet</h3>
+          <p className="text-gray-400">Your transaction history will appear here</p>
         </div>
       </div>
     </div>
@@ -722,137 +1232,11 @@ const FreelancerDashboard: React.FC = () => {
 
   const renderMessagesContent = () => (
     <div className="space-y-6 sm:space-y-8">
-      {/* Message Composition Form */}
       <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
-        <div className="mb-6 sm:mb-8">
-          <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Send Message</h2>
-          <p className="text-sm sm:text-base text-gray-300">
-            Communicate with clients about your projects
-          </p>
-        </div>
-
-        <form className="space-y-6" noValidate>
-          {/* Client ID Selection */}
-          <div>
-            <label htmlFor="client-select" className="block text-gray-300 text-sm font-semibold mb-2">
-              Select Client *
-            </label>
-            <select
-              id="client-select"
-              className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/50 bg-gray-700 text-white text-sm sm:text-base"
-              required
-            >
-              <option value="">Choose a client...</option>
-              <option value="C123456789">TechCorp Solutions (ID: C123456789)</option>
-              <option value="C987654321">Digital Marketing Pro (ID: C987654321)</option>
-              <option value="C456789123">Creative Studios Ltd (ID: C456789123)</option>
-            </select>
-          </div>
-
-          {/* Project ID Selection */}
-          <div>
-            <label htmlFor="project-select" className="block text-gray-300 text-sm font-semibold mb-2">
-              Select Project *
-            </label>
-            <select
-              id="project-select"
-              className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/50 bg-gray-700 text-white text-sm sm:text-base"
-              required
-            >
-              <option value="">Choose a project...</option>
-              <option value="P67890">Corporate Video Production (ID: P67890)</option>
-              <option value="P54321">Social Media Campaign (ID: P54321)</option>
-              <option value="P98765">Product Demo Video (ID: P98765)</option>
-            </select>
-          </div>
-
-          {/* Subject Category */}
-          <div>
-            <label htmlFor="subject-category" className="block text-gray-300 text-sm font-semibold mb-2">
-              Subject Category *
-            </label>
-            <select
-              id="subject-category"
-              className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/50 bg-gray-700 text-white text-sm sm:text-base"
-              required
-            >
-              <option value="">Select category...</option>
-              <option value="deliverable-checklist">Deliverable Checklist</option>
-              <option value="work-verification">Work Verification</option>
-              <option value="manual-revision">Invoking Manual Revision</option>
-              <option value="work-approval">Work Approval</option>
-            </select>
-          </div>
-
-          {/* Message Content */}
-          <div>
-            <label htmlFor="message-content" className="block text-gray-300 text-sm font-semibold mb-2">
-              Message Content *
-            </label>
-            <textarea
-              id="message-content"
-              rows={6}
-              placeholder="Type your message here..."
-              maxLength={1000}
-              className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/50 bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base resize-none"
-              required
-            />
-            <div className="flex justify-between items-center mt-1">
-              <p className="text-gray-400 text-xs sm:text-sm">Maximum 1000 characters</p>
-              <span className="text-xs sm:text-sm text-gray-400">0/1000</span>
-            </div>
-          </div>
-
-          {/* File Attachments */}
-          <div>
-            <label className="block text-gray-300 text-sm font-semibold mb-2">
-              File Attachments (Optional)
-            </label>
-            <div className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center hover:border-gray-500 transition-colors">
-              <Upload className="mx-auto h-8 w-8 text-gray-400 mb-4" />
-              <p className="text-gray-300 font-medium mb-2">
-                Drag and drop files here
-              </p>
-              <p className="text-sm text-gray-400 mb-4">or</p>
-              <button
-                type="button"
-                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400"
-              >
-                Browse Files
-              </button>
-              <p className="text-xs text-gray-400 mt-4">
-                Supported: PDF, DOC, DOCX, JPG, PNG, MP4, ZIP, etc. Max 10MB per file
-              </p>
-            </div>
-          </div>
-
-          {/* Send Button */}
-          <div className="pt-6 border-t border-gray-700">
-            <button
-              type="submit"
-              className="w-full flex items-center justify-center space-x-2 py-3 sm:py-4 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold text-base sm:text-lg transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400"
-            >
-              <MessageSquare className="h-5 w-5" />
-              <span>Send Message</span>
-            </button>
-          </div>
-        </form>
-      </div>
-
-      {/* Messages Thread */}
-      <div className="bg-gray-800 rounded-2xl p-6 sm:p-8 border border-gray-700 text-center">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-700 rounded-full flex items-center justify-center">
-            <MessageSquare className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" aria-hidden="true" />
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-lg sm:text-xl font-semibold text-white">
-              No messages yet
-            </h3>
-            <p className="text-sm sm:text-base text-gray-400 max-w-md">
-              Start a conversation with a client to discuss project details, deliverables, and approvals.
-            </p>
-          </div>
+        <div className="text-center py-12">
+          <MessageSquare className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-white mb-2">No Messages Yet</h3>
+          <p className="text-gray-400">Your conversations with freelancers will appear here</p>
         </div>
       </div>
     </div>
@@ -862,6 +1246,8 @@ const FreelancerDashboard: React.FC = () => {
     switch (activeTab) {
       case 'profile':
         return renderProfileContent();
+      case 'create-project':
+        return renderCreateProjectContent();
       case 'projects':
         return renderMyProjectsContent();
       case 'transactions':
@@ -874,30 +1260,23 @@ const FreelancerDashboard: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900" role="main">
+    <div className="min-h-screen bg-gray-900">
       {/* Header */}
-      <header className="bg-gray-800 border-b border-gray-700 px-4 sm:px-6 lg:px-8" role="banner">
+      <header className="bg-gray-800 border-b border-gray-700 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between h-16">
-            {/* Logo */}
-            <Link 
-              to="/" 
-              className="flex items-center space-x-2 focus:outline-none focus:ring-2 focus:ring-cyan-400 rounded-lg p-1"
-              aria-label="SecureServe Home"
-            >
-              <Shield className="h-8 w-8 text-cyan-400" />
+            <Link to="/" className="flex items-center space-x-2">
+              <Shield className="h-8 w-8 text-purple-400" />
               <span className="text-xl font-bold text-white">SecureServe</span>
             </Link>
 
-            {/* User Menu */}
             <div className="flex items-center space-x-2 sm:space-x-4">
               <span className="text-gray-300 text-sm sm:text-base hidden sm:inline">
-                Welcome, {profileData.fullName || 'Freelancer'}
+                Welcome, {profileData.fullName || 'Client'}
               </span>
               <button
                 onClick={handleLogout}
-                className="px-3 py-2 sm:px-4 bg-red-600 hover:bg-red-700 focus:bg-red-700 text-white rounded-lg transition-colors text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
-                aria-label="Logout from dashboard"
+                className="px-3 py-2 sm:px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
               >
                 Logout
               </button>
@@ -907,28 +1286,24 @@ const FreelancerDashboard: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8" role="main">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
         {/* Tab Navigation */}
-        <nav className="mb-6 sm:mb-8" role="navigation" aria-label="Dashboard navigation">
+        <nav className="mb-6 sm:mb-8">
           <div className="border-b border-gray-700">
-            <div className="-mb-px flex space-x-4 sm:space-x-8 overflow-x-auto scrollbar-hide">
+            <div className="-mb-px flex space-x-4 sm:space-x-8 overflow-x-auto">
               {tabs.map((tab) => {
                 const IconComponent = tab.icon;
                 return (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center space-x-1 sm:space-x-2 py-3 sm:py-4 px-1 sm:px-2 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-gray-900 ${
+                    className={`flex items-center space-x-1 sm:space-x-2 py-3 sm:py-4 px-1 sm:px-2 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap transition-colors ${
                       activeTab === tab.id
-                        ? 'border-cyan-400 text-cyan-400'
+                        ? 'border-purple-400 text-purple-400'
                         : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300'
                     }`}
-                    role="tab"
-                    aria-selected={activeTab === tab.id}
-                    aria-controls={`${tab.id}-panel`}
-                    id={`${tab.id}-tab`}
                   >
-                    <IconComponent className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
+                    <IconComponent className="h-4 w-4 sm:h-5 sm:w-5" />
                     <span>{tab.label}</span>
                   </button>
                 );
@@ -938,16 +1313,151 @@ const FreelancerDashboard: React.FC = () => {
         </nav>
 
         {/* Tab Content */}
-        <div 
-          role="tabpanel" 
-          id={`${activeTab}-panel`} 
-          aria-labelledby={`${activeTab}-tab`}
-        >
-          {renderTabContent()}
-        </div>
+        {renderTabContent()}
       </main>
     </div>
   );
 };
 
-export default FreelancerDashboard;
+// Conversation Interface Component
+interface ConversationInterfaceProps {
+  currentResponse: string;
+  followUpQuestions: string[];
+  conversationHistory: ConversationMessage[];
+  onContinueConversation: (response: string) => void;
+  onGenerateFinalChecklist: () => void;
+  isGenerating: boolean;
+}
+
+const ConversationInterface: React.FC<ConversationInterfaceProps> = ({
+  currentResponse,
+  followUpQuestions,
+  conversationHistory,
+  onContinueConversation,
+  onGenerateFinalChecklist,
+  isGenerating
+}) => {
+  const [userResponse, setUserResponse] = useState('');
+
+  const handleSubmitResponse = () => {
+    if (userResponse.trim()) {
+      onContinueConversation(userResponse.trim());
+      setUserResponse('');
+    }
+  };
+
+  const handleQuestionClick = (question: string) => {
+    setUserResponse(question);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Conversation History */}
+      {conversationHistory.length > 0 && (
+        <div className="bg-gray-700 rounded-lg p-4 max-h-64 overflow-y-auto">
+          <h4 className="text-sm font-semibold text-gray-300 mb-3">Conversation History:</h4>
+          <div className="space-y-3">
+            {conversationHistory.slice(-4).map((message, index) => (
+              <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-xs lg:max-w-md px-3 py-2 rounded-lg text-sm ${
+                  message.role === 'user' 
+                    ? 'bg-purple-600 text-white' 
+                    : 'bg-gray-600 text-gray-200'
+                }`}>
+                  {message.content}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Current AI Response */}
+      {currentResponse && (
+        <div className="bg-gray-700 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0 w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center">
+              <MessageSquare className="h-4 w-4 text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-white text-sm sm:text-base leading-relaxed">
+                {currentResponse}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Follow-up Questions */}
+      {followUpQuestions.length > 0 && (
+        <div className="space-y-3">
+          <h4 className="text-sm font-semibold text-gray-300">Suggested responses:</h4>
+          <div className="grid gap-2">
+            {followUpQuestions.map((question, index) => (
+              <button
+                key={index}
+                onClick={() => handleQuestionClick(question)}
+                disabled={isGenerating}
+                className="text-left p-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm text-gray-300 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {question}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* User Response Input */}
+      <div className="space-y-3">
+        <label className="block text-gray-300 text-sm font-semibold">
+          Your Response:
+        </label>
+        <textarea
+          rows={3}
+          value={userResponse}
+          onChange={(e) => setUserResponse(e.target.value)}
+          placeholder="Type your response here..."
+          disabled={isGenerating}
+          className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-400/50 bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base resize-none disabled:opacity-50"
+        />
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button
+            onClick={handleSubmitResponse}
+            disabled={isGenerating || !userResponse.trim()}
+            className={`flex-1 flex items-center justify-center space-x-2 py-3 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 ${
+              isGenerating || !userResponse.trim()
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
+                : 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-400'
+            }`}
+          >
+            {isGenerating ? (
+              <>
+                <Loader className="h-4 w-4 animate-spin" />
+                <span>Processing...</span>
+              </>
+            ) : (
+              <>
+                <MessageSquare className="h-4 w-4" />
+                <span>Continue Conversation</span>
+              </>
+            )}
+          </button>
+          <button
+            onClick={onGenerateFinalChecklist}
+            disabled={isGenerating || conversationHistory.length < 2}
+            className={`flex-1 flex items-center justify-center space-x-2 py-3 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 ${
+              isGenerating || conversationHistory.length < 2
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
+                : 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-400'
+            }`}
+          >
+            <CheckCircle className="h-4 w-4" />
+            <span>Generate Final Checklist</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ClientDashboard;
