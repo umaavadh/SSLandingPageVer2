@@ -46,6 +46,7 @@ interface ProjectConversation {
   created_at: string;
   updated_at: string;
 }
+
 const ClientDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('profile');
@@ -129,17 +130,17 @@ const ClientDashboard: React.FC = () => {
   useEffect(() => {
     const loadUserData = async () => {
       try {
-        const { user } = await getCurrentUser()
+        const { user } = await getCurrentUser();
         if (user) {
           // Load user profile from database
-          const { getUserProfile } = await import('../lib/supabase')
-          const { data: profile, error } = await getUserProfile()
+          const { getUserProfile } = await import('../lib/supabase');
+          const { data: profile, error } = await getUserProfile();
           
           if (error) {
-            console.error('Error loading profile:', error)
+            console.error('Error loading profile:', error);
             // Set basic data from auth user
-            setProfileData(prev => ({ ...prev, email: user.email || '' }))
-            setOriginalData(prev => ({ ...prev, email: user.email || '' }))
+            setProfileData(prev => ({ ...prev, email: user.email || '' }));
+            setOriginalData(prev => ({ ...prev, email: user.email || '' }));
           } else if (profile) {
             // Set data from database profile
             const profileData = {
@@ -150,113 +151,113 @@ const ClientDashboard: React.FC = () => {
               companyName: profile.company_name || '',
               gstNumber: profile.gst_number || '',
               clientId: profile.client_id || ''
-            }
-            setProfileData(profileData)
-            setOriginalData(profileData)
-            setIsNewUser(!profile.profile_completed)
+            };
+            setProfileData(profileData);
+            setOriginalData(profileData);
+            setIsNewUser(!profile.profile_completed);
             if (profile.updated_at) {
-              setLastUpdated(new Date(profile.updated_at))
+              setLastUpdated(new Date(profile.updated_at));
             }
           } else {
             // No profile exists, set basic data
-            setProfileData(prev => ({ ...prev, email: user.email || '' }))
-            setOriginalData(prev => ({ ...prev, email: user.email || '' }))
+            setProfileData(prev => ({ ...prev, email: user.email || '' }));
+            setOriginalData(prev => ({ ...prev, email: user.email || '' }));
           }
           
           // Load saved project conversations
-          await loadSavedProjects()
+          await loadSavedProjects();
         }
       } catch (error) {
-        console.error('Error loading user data:', error)
+        console.error('Error loading user data:', error);
       }
-    }
+    };
 
-    loadUserData()
-  }, [])
+    loadUserData();
+  }, []);
 
   // Load saved project conversations
   const loadSavedProjects = async () => {
     try {
-      const { data, error } = await getProjectConversations()
+      const { data, error } = await getProjectConversations();
       if (error) {
-        console.error('Error loading projects:', error)
-        return
+        console.error('Error loading projects:', error);
+        return;
       }
       if (data) {
-        setSavedProjects(data)
+        setSavedProjects(data);
       }
     } catch (error) {
-      console.error('Error loading projects:', error)
+      console.error('Error loading projects:', error);
     }
-  }
+  };
 
   // Generate unique project ID
   const generateProjectId = () => {
-    return `proj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  }
+    return `proj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  };
 
   // Start new project
   const startNewProject = async () => {
     if (!newProjectName.trim()) {
-      setError('Please enter a project name')
-      return
+      setError('Please enter a project name');
+      return;
     }
 
-    const projectId = generateProjectId()
+    const projectId = generateProjectId();
     const welcomeMessage: Message = {
       id: 'welcome',
       role: 'assistant',
       content: "Hello! I'm your AI project assistant. I'll help you create a detailed checklist for your project by asking you some questions. Let's start - what kind of project are you planning?",
       timestamp: new Date()
-    }
+    };
 
     try {
-      await saveProjectConversation(projectId, newProjectName.trim(), [welcomeMessage], 0, 'active')
+      await saveProjectConversation(projectId, newProjectName.trim(), [welcomeMessage], 0, 'active');
       
-      setCurrentProjectId(projectId)
-      setCurrentProjectName(newProjectName.trim())
-      setConversation([welcomeMessage])
-      setCollectedParameters(0)
-      setShowChecklist(false)
-      setExtractedParameters([])
-      setShowNewProjectModal(false)
-      setNewProjectName('')
+      setCurrentProjectId(projectId);
+      setCurrentProjectName(newProjectName.trim());
+      setConversation([welcomeMessage]);
+      setCollectedParameters(0);
+      setShowChecklist(false);
+      setExtractedParameters([]);
+      setShowNewProjectModal(false);
+      setNewProjectName('');
       
-      await loadSavedProjects()
+      await loadSavedProjects();
     } catch (error) {
-      console.error('Error creating new project:', error)
-      setError('Failed to create new project')
+      console.error('Error creating new project:', error);
+      setError('Failed to create new project');
     }
-  }
+  };
 
   // Load existing project
   const loadProject = async (projectId: string) => {
     try {
-      const { data, error } = await getProjectConversation(projectId)
+      const { data, error } = await getProjectConversation(projectId);
       if (error) {
-        console.error('Error loading project:', error)
-        setError('Failed to load project')
-        return
+        console.error('Error loading project:', error);
+        setError('Failed to load project');
+        return;
       }
       
       if (data) {
-        setCurrentProjectId(data.project_id)
-        setCurrentProjectName(data.project_name || '')
-        setConversation(data.messages || [])
-        setCollectedParameters(data.parameters_collected || 0)
-        setShowChecklist(false)
-        setExtractedParameters([])
-        setShowProjectSelector(false)
+        setCurrentProjectId(data.project_id);
+        setCurrentProjectName(data.project_name || '');
+        setConversation(data.messages || []);
+        setCollectedParameters(data.parameters_collected || 0);
+        setShowChecklist(false);
+        setExtractedParameters([]);
+        setShowProjectSelector(false);
       }
     } catch (error) {
-      console.error('Error loading project:', error)
-      setError('Failed to load project')
+      console.error('Error loading project:', error);
+      setError('Failed to load project');
     }
-  }
+  };
 
   // Save current conversation
   const saveCurrentConversation = async () => {
-    if (!currentProjectId || !currentProjectName) return
+    if (!currentProjectId || !currentProjectName) return;
     
     try {
       await saveProjectConversation(
@@ -265,42 +266,42 @@ const ClientDashboard: React.FC = () => {
         conversation,
         collectedParameters,
         'active'
-      )
+      );
     } catch (error) {
-      console.error('Error saving conversation:', error)
+      console.error('Error saving conversation:', error);
     }
-  }
+  };
 
   // Delete project
   const deleteProject = async (projectId: string) => {
     if (!confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-      return
+      return;
     }
 
     try {
-      const { error } = await deleteProjectConversation(projectId)
+      const { error } = await deleteProjectConversation(projectId);
       if (error) {
-        console.error('Error deleting project:', error)
-        setError('Failed to delete project')
-        return
+        console.error('Error deleting project:', error);
+        setError('Failed to delete project');
+        return;
       }
       
       // If we're deleting the current project, reset the state
       if (projectId === currentProjectId) {
-        setCurrentProjectId('')
-        setCurrentProjectName('')
-        setConversation([])
-        setCollectedParameters(0)
-        setShowChecklist(false)
-        setExtractedParameters([])
+        setCurrentProjectId('');
+        setCurrentProjectName('');
+        setConversation([]);
+        setCollectedParameters(0);
+        setShowChecklist(false);
+        setExtractedParameters([]);
       }
       
-      await loadSavedProjects()
+      await loadSavedProjects();
     } catch (error) {
-      console.error('Error deleting project:', error)
-      setError('Failed to delete project')
+      console.error('Error deleting project:', error);
+      setError('Failed to delete project');
     }
-  }
+  };
   // Calculate profile completion percentage
   const calculateCompletion = () => {
     const fields = ['fullName', 'mobileNumber', 'companyName'];
@@ -367,7 +368,7 @@ const ClientDashboard: React.FC = () => {
   const handleSave = async () => {
     if (validateForm()) {
       try {
-        const { updateUserProfile } = await import('../lib/supabase')
+        const { updateUserProfile } = await import('../lib/supabase');
         
         const profileUpdateData = {
           user_type: 'client',
@@ -377,14 +378,14 @@ const ClientDashboard: React.FC = () => {
           company_name: profileData.companyName,
           gst_number: profileData.gstNumber,
           profile_completed: true
-        }
+        };
         
-        const { data, error } = await updateUserProfile(profileUpdateData)
+        const { data, error } = await updateUserProfile(profileUpdateData);
         
         if (error) {
-          console.error('Error saving profile:', error)
+          console.error('Error saving profile:', error);
           // Handle error - you might want to show a toast notification
-          return
+          return;
         }
         
         if (data) {
@@ -392,19 +393,19 @@ const ClientDashboard: React.FC = () => {
           const updatedProfileData = {
             ...profileData,
             clientId: data.client_id || profileData.clientId
-          }
-          setProfileData(updatedProfileData)
-          setOriginalData(updatedProfileData)
-          setHasChanges(false)
-          setIsEditing(false)
-          setLastUpdated(new Date())
-          setIsNewUser(false)
+          };
+          setProfileData(updatedProfileData);
+          setOriginalData(updatedProfileData);
+          setHasChanges(false);
+          setIsEditing(false);
+          setLastUpdated(new Date());
+          setIsNewUser(false);
         }
       } catch (error) {
-        console.error('Error saving profile:', error)
+        console.error('Error saving profile:', error);
       }
     }
-  }
+  };
 
   // Handle cancel changes
   const handleCancel = () => {
@@ -465,8 +466,8 @@ const ClientDashboard: React.FC = () => {
 
     // Ensure we have a current project
     if (!currentProjectId) {
-      setError('Please start a new project first')
-      return
+      setError('Please start a new project first');
+      return;
     }
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -1325,6 +1326,7 @@ const ClientDashboard: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
         )}
 
         {/* Generate Checklist Button */}
