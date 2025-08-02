@@ -32,7 +32,7 @@
 2. Link your project: `supabase link --project-ref your-project-ref`
 3. Set the OpenAI API key for edge functions:
    ```bash
-   supabase secrets set OPENAI_API_KEY=your_openai_api_key_here
+   supabase secrets set SecureServe_Wizard_OpenAI_Key=your_openai_api_key_here
    ```
 
 ### Running the Application
