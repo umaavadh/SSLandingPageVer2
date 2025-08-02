@@ -311,10 +311,13 @@ const ClientDashboard: React.FC = () => {
       // Fetch response from OpenAI via Edge Function
       const { reply, detectedParameters } = await fetchChecklistFromGPT(updatedConversation);
       
+      // Clean up the reply by removing JSON metadata
+      const cleanReply = reply.replace(/```json\s*\n.*?\n```/s, '').trim();
+      
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: reply,
+        content: cleanReply,
         timestamp: new Date()
       };
 
