@@ -7,27 +7,27 @@ const corsHeaders = {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { userMessage } = await req.json()
+    const { messages } = await req.json();
 
-    if (!userMessage || typeof userMessage !== 'string') {
+    if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'userMessage string is required' }),
+        JSON.stringify({ error: 'messages array is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      );
     }
 
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
-    const assistantId = Deno.env.get('OPENAI_ASSISTANT_ID')
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    const assistantId = Deno.env.get('OPENAI_ASSISTANT_ID');
 
     if (!openaiApiKey || !assistantId) {
       return new Response(
         JSON.stringify({ error: 'OpenAI API key or Assistant ID not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      );
     }
 
     // 1. Create thread
@@ -35,78 +35,83 @@ serve(async (req) => {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       }
-    })
+    });
 
-    const thread = await threadRes.json()
-    const threadId = thread.id
+    const thread = await threadRes.json();
+    const threadId = thread.id;
 
-    // 2. Add message to thread
-    await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        role: 'user',
-        content: userMessage
-      })
-    })
+    // 2. Add all messages to thread
+    for (const msg of messages) {
+      if (msg.role && msg.content) {
+        await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openaiApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            role: msg.role,
+            content: msg.content
+          })
+        });
+      }
+    }
 
     // 3. Run assistant
     const runRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openaiApiKey}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         assistant_id: assistantId
       })
-    })
+    });
 
-    const run = await runRes.json()
+    const run = await runRes.json();
+    const runId = run.id;
 
     // 4. Poll for completion
-    let status = run.status
-    let runId = run.id
-    let retries = 0
+    let status = run.status;
+    let retries = 0;
     while (status !== 'completed' && retries < 15) {
-      await new Promise(r => setTimeout(r, 1000))
+      await new Promise(r => setTimeout(r, 1000));
       const statusRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
         headers: { 'Authorization': `Bearer ${openaiApiKey}` }
-      })
-      const runStatus = await statusRes.json()
-      status = runStatus.status
-      retries++
+      });
+      const runStatus = await statusRes.json();
+      status = runStatus.status;
+      retries++;
     }
 
     if (status !== 'completed') {
       return new Response(
         JSON.stringify({ error: 'Assistant did not respond in time' }),
         { status: 504, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      );
     }
 
-    // 5. Get latest message from thread
+    // 5. Get latest assistant message
     const messagesRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
       headers: { 'Authorization': `Bearer ${openaiApiKey}` }
-    })
-    const messagesData = await messagesRes.json()
-    const lastMessage = messagesData.data.find(m => m.role === 'assistant')
+    });
+    const messagesData = await messagesRes.json();
+
+    const lastAssistantMessage = messagesData.data.find(m => m.role === 'assistant');
 
     return new Response(
-      JSON.stringify({ reply: lastMessage?.content[0]?.text?.value || 'No response' }),
+      JSON.stringify({ reply: lastAssistantMessage?.content?.[0]?.text?.value || 'No response' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    );
 
   } catch (error) {
-    console.error('Function error:', error)
+    console.error('Function error:', error);
     return new Response(
       JSON.stringify({ error: 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    );
   }
-})
+});
