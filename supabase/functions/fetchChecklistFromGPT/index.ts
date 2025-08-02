@@ -84,7 +84,7 @@ You may ask these **one at a time** or **grouped by theme**, but ensure **all ar
 ---
 ## 🧾 Output Format
 Return all collected parameters in this structured JSON:
-```json
+\`\`\`json
 {
   "project_summary": {
     "video_type": "Explainer / Promo / Reel",
@@ -103,7 +103,7 @@ Return all collected parameters in this structured JSON:
   ],
   "total_parameters_collected": 14,
   "client_approval_required": true
-}
+\`\`\`
 
 
 🔁 Flow Rules
