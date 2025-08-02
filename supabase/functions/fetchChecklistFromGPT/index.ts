@@ -140,7 +140,7 @@ Once client approves, say:
       const err = await res.text()
       console.error('OpenAI API error:', res.status, err)
       return new Response(
-        JSON.stringify({ error: `OpenAI API error: ${res.status}` }),
+        JSON.stringify({ error: \`OpenAI API error: ${res.status}` }),
         { 
           status: res.status, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -185,3 +185,12 @@ Once client approves, say:
     )
   }
 })
+          }
+        ]
+      }
+      )
+    }
+    )
+  }
+}
+)
