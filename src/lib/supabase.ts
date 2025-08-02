@@ -226,3 +226,101 @@ export const getEnhancedProjectStats = async () => {
   const { data, error } = await supabase.rpc('get_enhanced_project_stats')
   return { data, error }
 }
+
+export const searchProjects = async (searchTerm: string) => {
+  const { data, error } = await supabase.rpc('search_projects', {
+    search_term: searchTerm
+  })
+  return { data, error }
+}
+
+// My Projects Backend Functions
+export const getUserProjectsDetailed = async () => {
+  const { data, error } = await supabase.rpc('get_user_projects_detailed')
+  return { data, error }
+}
+
+export const getProjectWithDeliverables = async (projectId: string) => {
+  const { data, error } = await supabase.rpc('get_project_with_deliverables', {
+    project_uuid: projectId
+  })
+  return { data, error }
+}
+
+export const updateProjectDetails = async (
+  projectId: string,
+  updates: {
+    projectName?: string
+    description?: string
+    completionDate?: string
+    amount?: number
+    freelancerId?: string
+  }
+) => {
+  const { data, error } = await supabase.rpc('update_project_details', {
+    project_uuid: projectId,
+    new_project_name: updates.projectName,
+    new_description: updates.description,
+    new_completion_date: updates.completionDate,
+    new_amount: updates.amount,
+    new_freelancer_id: updates.freelancerId
+  })
+  return { data, error }
+}
+
+export const addProjectDeliverable = async (
+  projectId: string,
+  requirement: string,
+  description: string,
+  category: string = 'General',
+  priority: 'high' | 'medium' | 'low' = 'medium'
+) => {
+  const { data, error } = await supabase.rpc('add_project_deliverable', {
+    project_uuid: projectId,
+    new_requirement: requirement,
+    new_description: description,
+    new_category: category,
+    new_priority: priority
+  })
+  return { data, error }
+}
+
+export const updateProjectDeliverable = async (
+  deliverableId: string,
+  updates: {
+    requirement?: string
+    description?: string
+    category?: string
+    priority?: 'high' | 'medium' | 'low'
+    completed?: boolean
+  }
+) => {
+  const { data, error } = await supabase.rpc('update_project_deliverable', {
+    deliverable_uuid: deliverableId,
+    new_requirement: updates.requirement,
+    new_description: updates.description,
+    new_category: updates.category,
+    new_priority: updates.priority,
+    new_completed: updates.completed
+  })
+  return { data, error }
+}
+
+export const deleteProjectDeliverable = async (deliverableId: string) => {
+  const { data, error } = await supabase.rpc('delete_project_deliverable', {
+    deliverable_uuid: deliverableId
+  })
+  return { data, error }
+}
+
+export const getProjectAnalytics = async () => {
+  const { data, error } = await supabase.rpc('get_project_analytics')
+  return { data, error }
+}
+
+export const searchUserProjects = async (searchTerm: string) => {
+  const { data, error } = await supabase.rpc('search_projects', {
+    search_term: searchTerm
+  })
+  return { data, error }
+}
