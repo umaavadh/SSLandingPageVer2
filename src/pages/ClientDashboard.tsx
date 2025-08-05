@@ -499,34 +499,6 @@ const ClientDashboard: React.FC = () => {
         return 'Unknown';
     }
   };
-      
-      // Add to projects list
-      const newProject = {
-        id: projectId,
-        name: projectData.projectName,
-        freelancer_id: projectData.freelancerId,
-        status: 'Project Created',
-        created_at: new Date().toISOString()
-      };
-      
-      setProjects(prev => [newProject, ...prev]);
-      setProjectData({
-        projectId: '',
-        projectCategory: 'Video Production',
-        projectName: '',
-        freelancerId: '',
-        projectRequirement: '',
-        desiredCompletionDate: '',
-        projectFiles: []
-      });
-      setShowCreateProjectModal(false);
-      setShowDeliverablesView(true);
-    } catch (error) {
-      console.error('Error creating project:', error);
-    } finally {
-      setIsCreatingProject(false);
-    }
-  };
 
   // Handle start wizard
   const handleStartWizard = () => {
@@ -1019,25 +991,6 @@ const ClientDashboard: React.FC = () => {
       {/* Deliverables View */}
       {showDeliverablesView && (
         <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
-          {/* Project Info Header */}
-          {getCurrentProject() && (
-            <div className="mb-6 p-4 bg-gray-700 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-white">
-                    {getCurrentProject()?.project_name}
-                  </h3>
-                  <p className="text-gray-300 text-sm">
-                    Project ID: {formatProjectId(getCurrentProject()?.id || '')}
-                  </p>
-                </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(getCurrentProject()?.status || 'draft')}`}>
-                  {getStatusDisplayText(getCurrentProject()?.status || 'draft')}
-                </div>
-              </div>
-            </div>
-          )}
-
           <div className="mb-8">
             <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Project Deliverables Checklist</h2>
             <p className="text-gray-300">Define what you expect to receive from the freelancer. Be specific and clear.</p>
@@ -1132,19 +1085,16 @@ const ClientDashboard: React.FC = () => {
               <tbody className="bg-gray-800">
                 {projects.map((project) => (
                   <tr key={project.id} className="border-t border-gray-700 hover:bg-gray-700/50">
-                    <td className="p-4 text-white">{formatProjectId(project.id)}</td>
-                    <td className="p-4 text-white">{project.project_name}</td>
-                    <td className="p-4 text-white">{project.freelancer_id || '-'}</td>
+                    <td className="p-4 text-white">{project.id}</td>
+                    <td className="p-4 text-white">{project.name}</td>
+                    <td className="p-4 text-white">{project.freelancer_id}</td>
                     <td className="p-4 text-center">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(project.status)}`}>
-                        {getStatusDisplayText(project.status)}
+                      <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-900/20 text-blue-400 border border-blue-500/30">
+                        {project.status}
                       </span>
                     </td>
                     <td className="p-4 text-center">
-                      <button 
-                        onClick={() => handleAddDeliverables(project.id)}
-                        className="px-3 py-1 rounded text-xs font-medium bg-purple-600 hover:bg-purple-700 text-white"
-                      >
+                      <button className="px-3 py-1 rounded text-xs font-medium bg-purple-600 hover:bg-purple-700 text-white">
                         Add Deliverables
                       </button>
                     </td>
