@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Building, CreditCard, MessageSquare, Shield, Edit3, Save, X, Upload, Plus, Clock, FileText, CheckCircle, Trash2, Eye, Calendar, DollarSign } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getCurrentUser, signOut, getUserProfile, updateUserProfile, getProjectConversations, saveProjectConversation, deleteProjectConversation } from '../lib/supabase';
+import { getCurrentUser, signOut, supabase } from '../lib/supabase';
 
 interface ProfileData {
   fullName: string;
