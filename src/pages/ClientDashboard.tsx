@@ -43,6 +43,8 @@ const ClientDashboard: React.FC = () => {
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [isSavingProject, setIsSavingProject] = useState(false);
 
   const [profileData, setProfileData] = useState<ProfileData>({
     fullName: '',
@@ -99,6 +101,33 @@ const ClientDashboard: React.FC = () => {
     { id: 'chat', label: 'Messages', icon: MessageSquare }
   ];
 
+  // Helper functions
+  const getUserProfile = async () => {
+    const { user } = await getCurrentUser();
+    if (user) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      return { data, error };
+    }
+    return { data: null, error: null };
+  };
+
+  const updateUserProfile = async (profileData: any) => {
+    const { user } = await getCurrentUser();
+    if (user) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .upsert({ id: user.id, ...profileData })
+        .select()
+        .single();
+      return { data, error };
+    }
+    return { data: null, error: null };
+  };
+
   // Load projects from Supabase
   const loadProjects = async () => {
     try {
@@ -126,28 +155,6 @@ const ClientDashboard: React.FC = () => {
     } finally {
       setLoadingProjects(false);
     }
-        if (profile) {
-          // Query projects from Supabase
-          const { data: projectsData, error } = await supabase
-            .from('projects')
-            .select('*')
-            .eq('client_id', profile.id)
-            .order('created_at', { ascending: false });
-          
-          if (error) {
-            console.error('Error loading projects:', error);
-            setProjects([]);
-          } else {
-            setProjects(projectsData || []);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error loading projects:', error);
-      setProjects([]);
-    } finally {
-      setLoadingProjects(false);
-    }
   };
 
   // Load user data on component mount
@@ -157,17 +164,19 @@ const ClientDashboard: React.FC = () => {
       try {
         const { user } = await getCurrentUser();
         if (user) {
+          const { data: profile, error } = await getUserProfile();
           if (error) {
             console.error('Error loading profile:', error);
             setProfileData(prev => ({ ...prev, email: user.email || '' }));
             setOriginalData(prev => ({ ...prev, email: user.email || '' }));
-            setOriginalData(prev => ({ ...prev, email: user.email || '' }));
+          } else if (profile) {
+            const profileData = {
+              fullName: profile.full_name || '',
               email: user.email || '',
               mobileNumber: profile.mobile_number || '',
               countryCode: profile.country_code || '+91',
               companyName: profile.company_name || '',
-              companyName: profile.company_name || '',
-              panTanNumber: profile.gst_number || '',
+              panNumber: profile.gst_number || '',
               upiId: profile.upi_id || '',
               clientId: profile.client_id || ''
             };
@@ -177,6 +186,7 @@ const ClientDashboard: React.FC = () => {
             if (profile.updated_at) {
               setLastUpdated(new Date(profile.updated_at));
             }
+          } else {
             setProfileData(prev => ({ ...prev, email: user.email || '' }));
             setOriginalData(prev => ({ ...prev, email: user.email || '' }));
           }
@@ -309,24 +319,27 @@ const ClientDashboard: React.FC = () => {
   // Handle save changes
   const handleSave = async () => {
     if (validateForm()) {
+      setIsLoadingProfile(true);
+      try {
         const profileUpdateData = {
           user_type: 'client',
           full_name: profileData.fullName,
           mobile_number: profileData.mobileNumber,
           country_code: profileData.countryCode,
           company_name: profileData.companyName,
-          gst_number: profileData.panTanNumber,
-          company_name: profileData.companyName,
           gst_number: profileData.panNumber,
+          upi_id: profileData.upiId,
           profile_completed: true
         };
         
         const { data, error } = await updateUserProfile(profileUpdateData);
         
         if (error) {
+          console.error('Error saving profile:', error);
           return;
         }
         
+        if (data) {
           const updatedProfileData = {
             ...profileData,
             clientId: data.client_id || profileData.clientId
@@ -375,7 +388,6 @@ const ClientDashboard: React.FC = () => {
   // Handle create project
   const handleCreateProject = async () => {
     if (!validateProjectForm()) {
-      setIsSavingProject(true);
       return;
     }
 
@@ -400,58 +412,44 @@ const ClientDashboard: React.FC = () => {
         category: projectData.projectCategory,
         completion_date: projectData.desiredCompletionDate,
         status: 'draft'
-        const { user } = await getCurrentUser();
-        if (user) {
-          const { data: profile } = await getUserProfile();
-          if (profile) {
-            const projectData = {
-              client_id: profile.id,
-              freelancer_id: null, // Will be set when freelancer accepts
-              project_name: projectForm.name,
-              description: projectForm.requirements,
-              category: projectForm.category,
-              completion_date: projectForm.completionDate,
-              status: 'draft',
-              amount: null // Will be set later
-            };
-            
-            const { data: newProject, error } = await supabase
-              .from('projects')
-              .insert([projectData])
-              .select()
-              .single();
-            
-            if (error) {
-              console.error('Error creating project:', error);
-              return;
-            }
-            
-            if (newProject) {
-              // Reload projects to show the new one
-              await loadProjects();
-              setCurrentProject(newProject);
-              
-              // Reset form and close modal
-              setProjectForm({
-                name: '',
-                category: 'Video Production',
-                freelancerId: '',
-                requirements: '',
-                completionDate: ''
-              });
-              setProjectErrors({});
-              setShowCreateModal(false);
-              
-              // Navigate to deliverables
-              setActiveTab('deliverables');
-            }
-          }
-        }
+      };
+
+      const { data: newProject, error } = await supabase
+        .from('projects')
+        .insert([projectPayload])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating project:', error);
+        return;
+      }
+
+      if (newProject) {
+        // Reload projects to show the new one
+        await loadProjects();
+        setCurrentProjectId(newProject.id);
+        
+        // Reset form
+        setProjectData({
+          projectId: '',
+          projectCategory: 'Video Production',
+          projectName: '',
+          freelancerId: '',
+          projectRequirement: '',
+          desiredCompletionDate: '',
+          projectFiles: []
+        });
+        setProjectErrors({
+          projectName: '',
+          freelancerId: '',
+          projectRequirement: '',
+          outputSubmissionBy: ''
+        });
+        
         // Close modal and show deliverables
         setShowCreateProjectModal(false);
         setShowDeliverablesView(true);
-      } finally {
-        setIsSavingProject(false);
       }
     } catch (error) {
       console.error('Error creating project:', error);
@@ -1002,15 +1000,15 @@ const ClientDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={handleCreateProject}
-                disabled={!isProjectFormValid || isSavingProject}
-                className={`flex items-center justify-center space-x-2 px-6 py-3 rounded-lg transition-colors focus:outline-none focus:ring-2 ${
-                  hasChanges && !isLoadingProfile
+                disabled={!isProjectFormValid() || isCreatingProject}
+                className={`flex items-center justify-center space-x-2 px-6 py-3 rounded-lg transition-colors focus:outline-none focus:ring-2 w-full ${
+                  isProjectFormValid() && !isCreatingProject
                     ? 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-400'
                     : 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
                 }`}
               >
                 {isCreatingProject ? (
-                <span>{isLoadingProfile ? 'Saving...' : 'Save Changes'}</span>
+                  <>
                     <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
                     <span>Creating Project...</span>
                   </>
@@ -1142,16 +1140,19 @@ const ClientDashboard: React.FC = () => {
               <tbody className="bg-gray-800">
                 {projects.map((project) => (
                   <tr key={project.id} className="border-t border-gray-700 hover:bg-gray-700/50">
-                    <td className="p-4 text-white">{project.id}</td>
-                    <td className="p-4 text-white">{project.name}</td>
-                    <td className="p-4 text-white">{project.freelancer_id}</td>
+                    <td className="p-4 text-white">{formatProjectId(project.id)}</td>
+                    <td className="p-4 text-white">{project.project_name}</td>
+                    <td className="p-4 text-white">{project.freelancer_id || '-'}</td>
                     <td className="p-4 text-center">
-                      <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-900/20 text-blue-400 border border-blue-500/30">
-                        {project.status}
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(project.status)}`}>
+                        {getStatusDisplayText(project.status)}
                       </span>
                     </td>
                     <td className="p-4 text-center">
-                      <button className="px-3 py-1 rounded text-xs font-medium bg-purple-600 hover:bg-purple-700 text-white">
+                      <button 
+                        onClick={() => handleAddDeliverables(project.id)}
+                        className="px-3 py-1 rounded text-xs font-medium bg-purple-600 hover:bg-purple-700 text-white"
+                      >
                         Add Deliverables
                       </button>
                     </td>
