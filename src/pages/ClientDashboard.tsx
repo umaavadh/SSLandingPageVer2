@@ -39,6 +39,7 @@ const ClientDashboard: React.FC = () => {
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
   const [showDeliverablesView, setShowDeliverablesView] = useState(false);
   const [showWizardChat, setShowWizardChat] = useState(false);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -104,9 +105,23 @@ const ClientDashboard: React.FC = () => {
       setLoadingProjects(true);
       const { user } = await getCurrentUser();
       if (user) {
-        // This would be replaced with actual Supabase query for projects
-        // For now, we'll show empty state
-        setProjects([]);
+        // Get user profile to get client_id
+        const { data: profile } = await getUserProfile();
+        if (profile) {
+          // Query projects from Supabase
+          const { data: projectsData, error } = await supabase
+            .from('projects')
+            .select('*')
+            .eq('client_id', profile.id)
+            .order('created_at', { ascending: false });
+          
+          if (error) {
+            console.error('Error loading projects:', error);
+            setProjects([]);
+          } else {
+            setProjects(projectsData || []);
+          }
+        }
       }
     } catch (error) {
       console.error('Error loading projects:', error);
@@ -346,12 +361,144 @@ const ClientDashboard: React.FC = () => {
 
     setIsCreatingProject(true);
     try {
-      // Here you would save to Supabase
-      // For now, we'll simulate the process
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { user } = await getCurrentUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Get user profile to get client_id
+      const { data: profile } = await getUserProfile();
+      if (!profile) {
+        throw new Error('User profile not found');
+      }
+
+      // Save project to Supabase
+      const projectPayload = {
+        client_id: profile.id,
+        project_name: projectData.projectName,
+        description: projectData.projectRequirement,
+        category: projectData.projectCategory,
+        completion_date: projectData.desiredCompletionDate,
+        status: 'draft'
+      };
+
+      const { data: newProject, error } = await supabase
+        .from('projects')
+        .insert([projectPayload])
+        .select()
+        .single();
       
-      // Generate project ID (this would come from Supabase)
-      const projectId = `V${Math.floor(Math.random() * 9000) + 1000}`;
+      if (error) {
+        console.error('Error creating project:', error);
+        throw error;
+      }
+
+      if (newProject) {
+        // Update local projects list
+        setProjects(prev => [newProject, ...prev]);
+        
+        // Set current project for deliverables
+        setCurrentProjectId(newProject.id);
+        
+        // Reset form
+        setProjectData({
+          projectId: '',
+          projectCategory: 'Video Production',
+          projectName: '',
+          freelancerId: '',
+          projectRequirement: '',
+          desiredCompletionDate: '',
+          projectFiles: []
+        });
+        
+        // Close modal and show deliverables
+        setShowCreateProjectModal(false);
+        setShowDeliverablesView(true);
+      }
+    } catch (error) {
+      console.error('Error creating project:', error);
+      // You might want to show an error message to the user here
+    } finally {
+      setIsCreatingProject(false);
+    }
+  };
+
+  // Handle add deliverables for existing project
+  const handleAddDeliverables = (projectId: string) => {
+    setCurrentProjectId(projectId);
+    setShowDeliverablesView(true);
+    setActiveTab('create-project'); // Switch to create-project tab to show deliverables
+  };
+
+  // Handle edit project
+  const handleEditProject = (projectId: string) => {
+    // Find the project and populate the form
+    const project = projects.find(p => p.id === projectId);
+    if (project) {
+      setProjectData({
+        projectId: project.id,
+        projectCategory: project.category || 'Video Production',
+        projectName: project.project_name,
+        freelancerId: '', // This would need to be stored if we want to edit it
+        projectRequirement: project.description,
+        desiredCompletionDate: project.completion_date || '',
+        projectFiles: []
+      });
+      setShowCreateProjectModal(true);
+    }
+  };
+
+  // Handle view project details
+  const handleViewProject = (projectId: string) => {
+    // This could open a detailed view modal
+    console.log('View project:', projectId);
+  };
+
+  // Get current project for deliverables
+  const getCurrentProject = () => {
+    if (!currentProjectId) return null;
+    return projects.find(p => p.id === currentProjectId);
+  };
+
+  // Format project ID for display
+  const formatProjectId = (id: string) => {
+    // Convert UUID to a more readable format like V1024
+    const hash = id.split('-')[0];
+    const num = parseInt(hash.substring(0, 4), 16) % 9000 + 1000;
+    return `V${num}`;
+  };
+
+  // Get status badge color
+  const getStatusBadgeColor = (status: string) => {
+    switch (status) {
+      case 'draft':
+        return 'bg-gray-600 text-gray-300';
+      case 'active':
+        return 'bg-blue-600 text-blue-300';
+      case 'completed':
+        return 'bg-green-600 text-green-300';
+      case 'cancelled':
+        return 'bg-red-600 text-red-300';
+      default:
+        return 'bg-gray-600 text-gray-300';
+    }
+  };
+
+  // Get status display text
+  const getStatusDisplayText = (status: string) => {
+    switch (status) {
+      case 'draft':
+        return 'Project Created';
+      case 'active':
+        return 'Active';
+      case 'completed':
+        return 'Completed';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return 'Unknown';
+    }
+  };
       
       // Add to projects list
       const newProject = {
@@ -872,6 +1019,25 @@ const ClientDashboard: React.FC = () => {
       {/* Deliverables View */}
       {showDeliverablesView && (
         <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
+          {/* Project Info Header */}
+          {getCurrentProject() && (
+            <div className="mb-6 p-4 bg-gray-700 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">
+                    {getCurrentProject()?.project_name}
+                  </h3>
+                  <p className="text-gray-300 text-sm">
+                    Project ID: {formatProjectId(getCurrentProject()?.id || '')}
+                  </p>
+                </div>
+                <div className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(getCurrentProject()?.status || 'draft')}`}>
+                  {getStatusDisplayText(getCurrentProject()?.status || 'draft')}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mb-8">
             <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Project Deliverables Checklist</h2>
             <p className="text-gray-300">Define what you expect to receive from the freelancer. Be specific and clear.</p>
@@ -966,16 +1132,19 @@ const ClientDashboard: React.FC = () => {
               <tbody className="bg-gray-800">
                 {projects.map((project) => (
                   <tr key={project.id} className="border-t border-gray-700 hover:bg-gray-700/50">
-                    <td className="p-4 text-white">{project.id}</td>
-                    <td className="p-4 text-white">{project.name}</td>
-                    <td className="p-4 text-white">{project.freelancer_id}</td>
+                    <td className="p-4 text-white">{formatProjectId(project.id)}</td>
+                    <td className="p-4 text-white">{project.project_name}</td>
+                    <td className="p-4 text-white">{project.freelancer_id || '-'}</td>
                     <td className="p-4 text-center">
-                      <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-900/20 text-blue-400 border border-blue-500/30">
-                        {project.status}
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(project.status)}`}>
+                        {getStatusDisplayText(project.status)}
                       </span>
                     </td>
                     <td className="p-4 text-center">
-                      <button className="px-3 py-1 rounded text-xs font-medium bg-purple-600 hover:bg-purple-700 text-white">
+                      <button 
+                        onClick={() => handleAddDeliverables(project.id)}
+                        className="px-3 py-1 rounded text-xs font-medium bg-purple-600 hover:bg-purple-700 text-white"
+                      >
                         Add Deliverables
                       </button>
                     </td>
