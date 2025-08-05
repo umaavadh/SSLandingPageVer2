@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { User, Briefcase, CreditCard, MessageSquare, Plus, Clock, Trash2, ArrowLeft, Send, Save, Bot, UserIcon, FileText } from 'lucide-react';
+import { User, Building, CreditCard, MessageSquare, Shield, Edit3, Save, X, Upload, Plus, Clock, FileText, CheckCircle, Trash2, Eye, Calendar, DollarSign } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getCurrentUser, signOut, getUserProfile, updateUserProfile, getProjectConversations, getProjectConversation, saveProjectConversation, deleteProjectConversation } from '../lib/supabase';
+import { getCurrentUser, signOut, getUserProfile, updateUserProfile, getProjectConversations, saveProjectConversation, deleteProjectConversation } from '../lib/supabase';
 
 interface ProfileData {
   fullName: string;
@@ -9,19 +9,24 @@ interface ProfileData {
   mobileNumber: string;
   countryCode: string;
   companyName: string;
-  gstNumber: string;
+  panNumber: string;
+  upiId: string;
   clientId: string;
 }
 
-interface ProjectConversation {
-  id: string;
-  project_id: string;
-  project_name: string;
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
-  parameters_collected: number;
-  status: 'active' | 'completed' | 'archived';
-  created_at: string;
-  updated_at: string;
+interface ProjectData {
+  projectId: string;
+  projectCategory: string;
+  projectName: string;
+  freelancerId: string;
+  projectRequirement: string;
+  desiredCompletionDate: string;
+  projectFiles: File[];
+}
+
+interface Deliverable {
+  id: number;
+  description: string;
 }
 
 const ClientDashboard: React.FC = () => {
@@ -31,64 +36,64 @@ const ClientDashboard: React.FC = () => {
   const [hasChanges, setHasChanges] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  
-  // Profile state
+  const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
+  const [showDeliverablesView, setShowDeliverablesView] = useState(false);
+  const [deliverables, setDeliverables] = useState<Deliverable[]>([
+    { id: 1, description: 'Deliverable 1 (e.g., High-quality 1080p video in MP4 format)' },
+    { id: 2, description: 'Deliverable 2 (e.g., High-quality 1080p video in MP4 format)' },
+    { id: 3, description: 'Deliverable 3 (e.g., High-quality 1080p video in MP4 format)' },
+    { id: 4, description: 'Deliverable 4 (e.g., High-quality 1080p video in MP4 format)' }
+  ]);
+
   const [profileData, setProfileData] = useState<ProfileData>({
     fullName: '',
     email: '',
     mobileNumber: '',
     countryCode: '+91',
     companyName: '',
-    gstNumber: '',
+    panNumber: '',
+    upiId: '',
     clientId: ''
   });
+
+  const [projectData, setProjectData] = useState<ProjectData>({
+    projectId: '',
+    projectCategory: 'Video Production',
+    projectName: '',
+    freelancerId: '',
+    projectRequirement: '',
+    desiredCompletionDate: '',
+    projectFiles: []
+  });
+
   const [originalData, setOriginalData] = useState<ProfileData>({
     fullName: '',
     email: '',
     mobileNumber: '',
     countryCode: '+91',
     companyName: '',
-    gstNumber: '',
+    panNumber: '',
+    upiId: '',
     clientId: ''
   });
+
   const [errors, setErrors] = useState<Partial<ProfileData>>({});
-
-  // Project conversation state
-  const [projectConversations, setProjectConversations] = useState<ProjectConversation[]>([]);
-  const [currentProject, setCurrentProject] = useState<{ id: string; name: string } | null>(null);
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
-  const [inputMessage, setInputMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [parametersCollected, setParametersCollected] = useState(0);
-
-  // UI state
-  const [showNewProjectForm, setShowNewProjectForm] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [showResumeProjects, setShowResumeProjects] = useState(false);
-  const [showChecklist, setShowChecklist] = useState(false);
-  const [checklistData, setChecklistData] = useState<any>(null);
 
   const countryCodes = [
     { code: '+91', country: 'India', flag: '🇮🇳' },
     { code: '+1', country: 'USA', flag: '🇺🇸' },
-    { code: '+44', country: 'UK', flag: '🇬🇧' },
-    { code: '+86', country: 'China', flag: '🇨🇳' },
-    { code: '+81', country: 'Japan', flag: '🇯🇵' },
-    { code: '+49', country: 'Germany', flag: '🇩🇪' },
-    { code: '+33', country: 'France', flag: '🇫🇷' },
-    { code: '+61', country: 'Australia', flag: '🇦🇺' }
+    { code: '+44', country: 'UK', flag: '🇬🇧' }
   ];
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'create-project', label: 'Create Project', icon: Plus },
-    { id: 'my-projects', label: 'My Projects', icon: Briefcase },
+    { id: 'my-projects', label: 'My Projects', icon: Building },
     { id: 'transactions', label: 'Transactions', icon: CreditCard },
-    { id: 'messages', label: 'Messages', icon: MessageSquare }
+    { id: 'chat', label: 'Chat', icon: MessageSquare }
   ];
 
-  // Load user data and projects on component mount
+  // Load user data on component mount
   useEffect(() => {
     const loadUserData = async () => {
       try {
@@ -107,7 +112,8 @@ const ClientDashboard: React.FC = () => {
               mobileNumber: profile.mobile_number || '',
               countryCode: profile.country_code || '+91',
               companyName: profile.company_name || '',
-              gstNumber: profile.gst_number || '',
+              panNumber: profile.gst_number || '',
+              upiId: profile.upi_id || '',
               clientId: profile.client_id || ''
             };
             setProfileData(profileData);
@@ -120,9 +126,6 @@ const ClientDashboard: React.FC = () => {
             setProfileData(prev => ({ ...prev, email: user.email || '' }));
             setOriginalData(prev => ({ ...prev, email: user.email || '' }));
           }
-
-          // Load project conversations
-          await loadProjectConversations();
         }
       } catch (error) {
         console.error('Error loading user data:', error);
@@ -132,221 +135,14 @@ const ClientDashboard: React.FC = () => {
     loadUserData();
   }, []);
 
-  const loadProjectConversations = async () => {
-    try {
-      const { data, error } = await getProjectConversations();
-      if (error) {
-        console.error('Error loading conversations:', error);
-      } else if (data) {
-        setProjectConversations(data);
-      }
-    } catch (error) {
-      console.error('Error loading conversations:', error);
-    }
-  };
-
-  const getProjectStatus = (conversation: ProjectConversation) => {
-    if (conversation.parameters_collected >= 14) {
-      return 'Checklist Generated';
-    } else if (conversation.parameters_collected > 0) {
-      return 'Parameters Finalized';
-    } else {
-      return 'Checklist Not Generated';
-    }
-  };
-
-  const startNewProject = async () => {
-    if (!newProjectName.trim()) return;
-
-    const projectId = `proj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const initialMessage = {
-      role: 'assistant' as const,
-      content: `Hello! I'm here to help you define your ${newProjectName} project. Let's start by understanding what you're looking to create. Could you tell me what type of video project this is? For example, is it a promotional video, corporate training content, social media content, product demonstration, or something else?`
-    };
-
-    try {
-      await saveProjectConversation(
-        projectId,
-        newProjectName,
-        [initialMessage],
-        0,
-        'active'
-      );
-
-      setCurrentProject({ id: projectId, name: newProjectName });
-      setMessages([initialMessage]);
-      setParametersCollected(0);
-      setNewProjectName('');
-      setShowNewProjectForm(false);
-      await loadProjectConversations();
-    } catch (error) {
-      console.error('Error creating project:', error);
-    }
-  };
-
-  const resumeProject = async (conversation: ProjectConversation) => {
-    setCurrentProject({ 
-      id: conversation.project_id, 
-      name: conversation.project_name 
-    });
-    setMessages(conversation.messages);
-    setParametersCollected(conversation.parameters_collected);
-    setShowResumeProjects(false);
-  };
-
-  const deleteProject = async (projectId: string) => {
-    if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-      try {
-        await deleteProjectConversation(projectId);
-        await loadProjectConversations();
-        
-        // If the deleted project was currently active, clear it
-        if (currentProject?.id === projectId) {
-          setCurrentProject(null);
-          setMessages([]);
-          setParametersCollected(0);
-        }
-      } catch (error) {
-        console.error('Error deleting project:', error);
-      }
-    }
-  };
-
-  const fetchChecklistFromGPT = async (messages: Array<{ role: 'user' | 'assistant'; content: string }>) => {
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetchChecklistFromGPT`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ messages }),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch response from AI');
-    }
-
-    const data = await response.json();
-    return data;
-  };
-
-  const handleSendMessage = async () => {
-    if (!inputMessage.trim() || !currentProject) return;
-
-    const userMessage = { role: 'user' as const, content: inputMessage.trim() };
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-    setInputMessage('');
-    setIsLoading(true);
-
-    try {
-      const response = await fetchChecklistFromGPT(updatedMessages);
-      const assistantMessage = { role: 'assistant' as const, content: response.reply };
-      const finalMessages = [...updatedMessages, assistantMessage];
-      
-      setMessages(finalMessages);
-      setParametersCollected(response.parametersCollected || parametersCollected);
-
-      // Auto-save conversation
-      await saveProjectConversation(
-        currentProject.id,
-        currentProject.name,
-        finalMessages,
-        response.parametersCollected || parametersCollected,
-        'active'
-      );
-      
-      await loadProjectConversations();
-    } catch (error) {
-      console.error('Error sending message:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSaveProgress = async () => {
-    if (!currentProject) return;
-
-    setIsSaving(true);
-    try {
-      await saveProjectConversation(
-        currentProject.id,
-        currentProject.name,
-        messages,
-        parametersCollected,
-        'active'
-      );
-      await loadProjectConversations();
-    } catch (error) {
-      console.error('Error saving progress:', error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const generateChecklist = async () => {
-    if (!currentProject || parametersCollected < 14) return;
-
-    setIsLoading(true);
-    try {
-      // Create a prompt to generate the final checklist
-      const checklistPrompt = {
-        role: 'user' as const,
-        content: 'Based on our conversation, please generate a comprehensive project checklist in JSON format with the following structure: {"projectDetails": {"type": "", "duration": "", "style": "", "targetAudience": "", "budget": "", "timeline": "", "deliverables": "", "revisions": "", "script": "", "voiceover": "", "music": "", "branding": "", "distribution": "", "successMetrics": ""}, "requirements": [{"category": "", "requirement": "", "specification": "", "priority": ""}]}. Extract all the information we discussed and organize it into this structured format.'
-      };
-
-      const checklistMessages = [...messages, checklistPrompt];
-      const response = await fetchChecklistFromGPT(checklistMessages);
-      
-      // Try to extract JSON from the response
-      let parsedChecklist = null;
-      try {
-        const jsonMatch = response.reply.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsedChecklist = JSON.parse(jsonMatch[0]);
-        }
-      } catch (e) {
-        console.error('Error parsing checklist JSON:', e);
-      }
-
-      if (parsedChecklist) {
-        setChecklistData(parsedChecklist);
-        setShowChecklist(true);
-        
-        // Update project status to completed
-        await saveProjectConversation(
-          currentProject.id,
-          currentProject.name,
-          messages,
-          parametersCollected,
-          'completed'
-        );
-        await loadProjectConversations();
-      } else {
-        // Fallback: show a basic checklist view
-        setShowChecklist(true);
-      }
-    } catch (error) {
-      console.error('Error generating checklist:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
-
-  // Profile management functions
+  // Calculate profile completion percentage
   const calculateCompletion = () => {
-    const fields = ['fullName', 'mobileNumber', 'companyName'];
+    const fields = ['fullName', 'mobileNumber', 'companyName', 'panNumber', 'upiId'];
     const completed = fields.filter(field => profileData[field as keyof ProfileData].trim() !== '').length;
     return Math.round((completed / fields.length) * 100);
   };
 
+  // Handle input changes
   const handleInputChange = (field: keyof ProfileData, value: string) => {
     setProfileData(prev => ({ ...prev, [field]: value }));
     setHasChanges(true);
@@ -356,6 +152,12 @@ const ClientDashboard: React.FC = () => {
     }
   };
 
+  // Handle project input changes
+  const handleProjectInputChange = (field: keyof ProjectData, value: string) => {
+    setProjectData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Validate form fields
   const validateForm = () => {
     const newErrors: Partial<ProfileData> = {};
 
@@ -373,10 +175,21 @@ const ClientDashboard: React.FC = () => {
       newErrors.companyName = 'Company name is required';
     }
 
+    if (!profileData.panNumber.trim()) {
+      newErrors.panNumber = 'PAN/TAN number is required';
+    }
+
+    if (!profileData.upiId.trim()) {
+      newErrors.upiId = 'UPI ID is required';
+    } else if (!/^[\w.-]+@[\w.-]+$/.test(profileData.upiId)) {
+      newErrors.upiId = 'Please enter a valid UPI ID';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  // Handle save changes
   const handleSave = async () => {
     if (validateForm()) {
       try {
@@ -386,7 +199,8 @@ const ClientDashboard: React.FC = () => {
           mobile_number: profileData.mobileNumber,
           country_code: profileData.countryCode,
           company_name: profileData.companyName,
-          gst_number: profileData.gstNumber,
+          gst_number: profileData.panNumber,
+          upi_id: profileData.upiId,
           profile_completed: true
         };
         
@@ -415,6 +229,7 @@ const ClientDashboard: React.FC = () => {
     }
   };
 
+  // Handle cancel changes
   const handleCancel = () => {
     setProfileData({ ...originalData });
     setHasChanges(false);
@@ -422,6 +237,7 @@ const ClientDashboard: React.FC = () => {
     setErrors({});
   };
 
+  // Handle logout
   const handleLogout = async () => {
     try {
       await signOut();
@@ -431,39 +247,57 @@ const ClientDashboard: React.FC = () => {
     }
   };
 
+  // Handle file upload
+  const handleFileUpload = (files: FileList | null) => {
+    if (files) {
+      const fileArray = Array.from(files);
+      setProjectData(prev => ({ ...prev, projectFiles: [...prev.projectFiles, ...fileArray] }));
+    }
+  };
+
+  // Handle create project
+  const handleCreateProject = () => {
+    // Generate project ID
+    const projectId = 'Will be auto generated';
+    setProjectData(prev => ({ ...prev, projectId }));
+    setShowCreateProjectModal(false);
+    setShowDeliverablesView(true);
+  };
+
+  // Add deliverable
+  const addDeliverable = () => {
+    const newId = Math.max(...deliverables.map(d => d.id)) + 1;
+    setDeliverables(prev => [...prev, { 
+      id: newId, 
+      description: `Deliverable ${newId} (e.g., High-quality 1080p video in MP4 format)` 
+    }]);
+  };
+
+  // Remove deliverable
+  const removeDeliverable = (id: number) => {
+    setDeliverables(prev => prev.filter(d => d.id !== id));
+  };
+
+  // Update deliverable
+  const updateDeliverable = (id: number, description: string) => {
+    setDeliverables(prev => prev.map(d => d.id === id ? { ...d, description } : d));
+  };
+
   const renderProfileContent = () => (
     <div className="space-y-6 sm:space-y-8">
-      {/* Welcome Banner for New Users */}
-      {isNewUser && (
-        <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/30 rounded-2xl p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-start space-y-3 sm:space-y-0 sm:space-x-4">
-            <div className="flex-shrink-0">
-              <User className="h-6 w-6 sm:h-8 sm:w-8 text-purple-400" />
-            </div>
-            <div className="flex-1">
-              <h2 className="text-lg sm:text-xl font-semibold text-white mb-2">
-                Welcome to SecureServe! 🎉
-              </h2>
-              <p className="text-sm sm:text-base text-gray-300 mb-4">
-                Please complete your profile information to get started with hiring freelancers.
-              </p>
-              <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
-                <div className="flex items-center space-x-2 w-full sm:w-auto">
-                  <div className="flex-1 sm:w-32 bg-gray-700 rounded-full h-2">
-                    <div 
-                      className="bg-gradient-to-r from-purple-400 to-pink-400 h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${calculateCompletion()}%` }}
-                    ></div>
-                  </div>
-                  <span className="text-sm font-medium text-purple-400 whitespace-nowrap">
-                    {calculateCompletion()}% Complete
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+      {/* Profile Status Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-gray-800 rounded-lg p-4 border border-gray-700 space-y-2 sm:space-y-0">
+        <div className="flex items-center space-x-2">
+          <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-gray-400" />
+          <span className="text-sm sm:text-base text-gray-300">
+            Last updated: {lastUpdated ? `${lastUpdated.toLocaleDateString()} at ${lastUpdated.toLocaleTimeString()}` : '7/28/2025 at 7:06:07 PM'}
+          </span>
         </div>
-      )}
+        <div className="flex items-center space-x-2">
+          <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-400" />
+          <span className="text-sm sm:text-base text-green-400 font-medium">Profile Complete</span>
+        </div>
+      </div>
 
       {/* Profile Form */}
       <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
@@ -474,24 +308,32 @@ const ClientDashboard: React.FC = () => {
               onClick={() => setIsEditing(true)}
               className="flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 w-full sm:w-auto"
             >
-              <User className="h-4 w-4" />
+              <Edit3 className="h-4 w-4" />
               <span>Edit Profile</span>
             </button>
           )}
         </div>
 
-        <form className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+        <form className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8" noValidate>
           {/* Client ID */}
           <div className="lg:col-span-2">
             <label className="block text-gray-300 text-sm font-semibold mb-2">
               Client ID
             </label>
-            <input
-              type="text"
-              value={profileData.clientId || 'Will be assigned after profile completion'}
-              disabled
-              className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg bg-gray-600 text-gray-300 cursor-not-allowed opacity-60 text-sm sm:text-base"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={profileData.clientId || 'C780292353'}
+                disabled
+                className="w-full px-4 py-3 pr-12 border-2 border-gray-600 rounded-lg bg-gray-600 text-gray-300 cursor-not-allowed opacity-60 text-sm sm:text-base"
+              />
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                <Shield className="h-5 w-5 text-purple-400" />
+              </div>
+            </div>
+            <p className="text-gray-400 text-xs sm:text-sm mt-1">
+              Your unique client identification number
+            </p>
           </div>
 
           {/* Full Name */}
@@ -503,7 +345,7 @@ const ClientDashboard: React.FC = () => {
               type="text"
               value={profileData.fullName}
               onChange={(e) => handleInputChange('fullName', e.target.value)}
-              placeholder="Enter your full name"
+              placeholder="Subham"
               disabled={!isEditing}
               className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
                 errors.fullName 
@@ -527,6 +369,7 @@ const ClientDashboard: React.FC = () => {
               disabled
               className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg bg-gray-600 text-gray-300 cursor-not-allowed opacity-60 text-sm sm:text-base"
             />
+            <p className="text-gray-400 text-xs sm:text-sm mt-1">Email cannot be changed</p>
           </div>
 
           {/* Mobile Number */}
@@ -551,7 +394,7 @@ const ClientDashboard: React.FC = () => {
                 type="tel"
                 value={profileData.mobileNumber}
                 onChange={(e) => handleInputChange('mobileNumber', e.target.value.replace(/\D/g, '').slice(0, 10))}
-                placeholder="Enter 10-digit mobile number"
+                placeholder="9876543210"
                 disabled={!isEditing}
                 maxLength={10}
                 className={`flex-1 px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
@@ -566,41 +409,81 @@ const ClientDashboard: React.FC = () => {
             )}
           </div>
 
-          {/* Company Name */}
+          {/* Company/Organization Name */}
           <div>
             <label className="block text-gray-300 text-sm font-semibold mb-2">
-              Company Name *
+              Company/Organization Name *
             </label>
-            <input
-              type="text"
-              value={profileData.companyName}
-              onChange={(e) => handleInputChange('companyName', e.target.value)}
-              placeholder="Enter your company name"
-              disabled={!isEditing}
-              className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
-                errors.companyName 
-                  ? 'border-red-500 focus:border-red-400' 
-                  : 'border-gray-600 focus:border-purple-400'
-              } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={profileData.companyName}
+                onChange={(e) => handleInputChange('companyName', e.target.value)}
+                placeholder="Subham Enterprises"
+                disabled={!isEditing}
+                className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
+                  errors.companyName 
+                    ? 'border-red-500 focus:border-red-400' 
+                    : 'border-gray-600 focus:border-purple-400'
+                } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
+              />
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                <Building className="h-5 w-5 text-purple-400" />
+              </div>
+            </div>
             {errors.companyName && (
               <p className="text-red-400 text-xs sm:text-sm mt-1">{errors.companyName}</p>
             )}
           </div>
 
-          {/* GST Number */}
-          <div className="lg:col-span-2">
+          {/* PAN/TAN Number */}
+          <div>
             <label className="block text-gray-300 text-sm font-semibold mb-2">
-              GST Number (Optional)
+              PAN/TAN Number *
             </label>
             <input
               type="text"
-              value={profileData.gstNumber}
-              onChange={(e) => handleInputChange('gstNumber', e.target.value.toUpperCase())}
-              placeholder="Enter GST number (e.g., 22AAAAA0000A1Z5)"
+              value={profileData.panNumber}
+              onChange={(e) => handleInputChange('panNumber', e.target.value.toUpperCase())}
+              placeholder="ABCDE1234F"
               disabled={!isEditing}
-              className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base border-gray-600 focus:border-purple-400 ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
+              className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
+                errors.panNumber 
+                  ? 'border-red-500 focus:border-red-400' 
+                  : 'border-gray-600 focus:border-purple-400'
+              } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
             />
+            <p className="text-gray-400 text-xs sm:text-sm mt-1">
+              10-character alphanumeric identifier (e.g., ABCDE1234F)
+            </p>
+            {errors.panNumber && (
+              <p className="text-red-400 text-xs sm:text-sm mt-1">{errors.panNumber}</p>
+            )}
+          </div>
+
+          {/* UPI ID */}
+          <div>
+            <label className="block text-gray-300 text-sm font-semibold mb-2">
+              UPI ID *
+            </label>
+            <input
+              type="text"
+              value={profileData.upiId}
+              onChange={(e) => handleInputChange('upiId', e.target.value)}
+              placeholder="9876543210@sbi"
+              disabled={!isEditing}
+              className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none transition-colors bg-gray-700 text-white placeholder-gray-400 text-sm sm:text-base ${
+                errors.upiId 
+                  ? 'border-red-500 focus:border-red-400' 
+                  : 'border-gray-600 focus:border-purple-400'
+              } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
+            />
+            <p className="text-gray-400 text-xs sm:text-sm mt-1">
+              Example: yourname@paytm, 9876543210@ybl
+            </p>
+            {errors.upiId && (
+              <p className="text-red-400 text-xs sm:text-sm mt-1">{errors.upiId}</p>
+            )}
           </div>
         </form>
 
@@ -611,6 +494,7 @@ const ClientDashboard: React.FC = () => {
               onClick={handleCancel}
               className="flex items-center justify-center space-x-2 px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
             >
+              <X className="h-4 w-4" />
               <span>Cancel</span>
             </button>
             <button
@@ -633,485 +517,264 @@ const ClientDashboard: React.FC = () => {
 
   const renderCreateProjectContent = () => (
     <div className="space-y-6 sm:space-y-8">
-      {/* Current Project Chat */}
-      {currentProject ? (
-        <div className="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden">
-          {/* Chat Header */}
-          <div className="bg-gray-700 px-6 py-4 border-b border-gray-600">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={() => {
-                    setCurrentProject(null);
-                    setMessages([]);
-                    setParametersCollected(0);
-                  }}
-                  className="text-gray-400 hover:text-white transition-colors"
-                >
-                  <ArrowLeft className="h-5 w-5" />
-                </button>
-                <div>
-                  <h3 className="text-lg font-semibold text-white">{currentProject.name}</h3>
-                  <p className="text-sm text-gray-400">AI Project Assistant</p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={handleSaveProgress}
-                  disabled={isSaving}
-                  className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
-                >
-                  <Save className="h-4 w-4" />
-                  <span>{isSaving ? 'Saving...' : 'Save Progress'}</span>
-                </button>
-                {parametersCollected >= 14 && (
-                  <button
-                    onClick={generateChecklist}
-                    disabled={isLoading}
-                    className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-400"
-                  >
-                    <FileText className="h-4 w-4" />
-                    <span>{isLoading ? 'Generating...' : 'Generate Checklist'}</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+      {/* Create Project Options */}
+      <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
+        <div className="text-center mb-8">
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-4">Create New Project</h2>
+          <p className="text-gray-300">Choose how you'd like to start your project</p>
+        </div>
 
-          {/* Chat Messages */}
-          <div className="h-96 overflow-y-auto p-6 space-y-4">
-            {messages.map((message, index) => (
-              <div
-                key={index}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* Start New Project */}
+          <button
+            onClick={() => setShowCreateProjectModal(true)}
+            className="p-8 bg-purple-600 hover:bg-purple-700 rounded-xl transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-400"
+          >
+            <div className="text-center">
+              <Plus className="h-12 w-12 text-white mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-white mb-2">Start New Project</h3>
+              <p className="text-purple-100">Create a fresh project from scratch</p>
+            </div>
+          </button>
+
+          {/* Resume Existing Project */}
+          <button className="p-8 bg-gray-700 hover:bg-gray-600 rounded-xl transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-400">
+            <div className="text-center">
+              <Clock className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-white mb-2">Resume Existing Project</h3>
+              <p className="text-gray-300">Continue working on saved projects</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Create Project Modal */}
+      {showCreateProjectModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+          <div className="bg-gray-800 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-gray-700">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-white">Create New Project</h3>
+              <button
+                onClick={() => setShowCreateProjectModal(false)}
+                className="text-gray-400 hover:text-white transition-colors"
               >
-                <div className={`flex items-start space-x-3 max-w-3xl ${message.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    message.role === 'user' ? 'bg-purple-600' : 'bg-gray-600'
-                  }`}>
-                    {message.role === 'user' ? (
-                      <UserIcon className="h-4 w-4 text-white" />
-                    ) : (
-                      <Bot className="h-4 w-4 text-white" />
-                    )}
-                  </div>
-                  <div className={`px-4 py-3 rounded-2xl ${
-                    message.role === 'user' 
-                      ? 'bg-purple-600 text-white' 
-                      : 'bg-gray-700 text-gray-100'
-                  }`}>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <p className="text-gray-300 mb-6">Fill in the details below to start your new project with a freelancer.</p>
+
+            <form className="space-y-6">
+              {/* Project ID */}
+              <div>
+                <label className="block text-gray-300 text-sm font-semibold mb-2">
+                  Project ID (Read-only)
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value="Will be auto generated"
+                    disabled
+                    className="w-full px-4 py-3 pr-12 border-2 border-gray-600 rounded-lg bg-gray-600 text-gray-300 cursor-not-allowed opacity-60"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <Shield className="h-5 w-5 text-purple-400" />
                   </div>
                 </div>
+                <p className="text-gray-400 text-xs mt-1">Project ID will be automatically generated after form submission</p>
               </div>
-            ))}
-            {isLoading && (
-              <div className="flex justify-start">
-                <div className="flex items-start space-x-3 max-w-3xl">
-                  <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-white" />
+
+              {/* Project Category */}
+              <div>
+                <label className="block text-gray-300 text-sm font-semibold mb-2">
+                  Project Category *
+                </label>
+                <div className="relative">
+                  <select
+                    value={projectData.projectCategory}
+                    onChange={(e) => handleProjectInputChange('projectCategory', e.target.value)}
+                    className="w-full px-4 py-3 pr-12 border-2 border-gray-600 rounded-lg bg-gray-700 text-white focus:outline-none focus:border-purple-400"
+                  >
+                    <option value="Video Production">Video Production</option>
+                    <option value="Web Development">Web Development</option>
+                    <option value="Graphic Design">Graphic Design</option>
+                    <option value="Content Writing">Content Writing</option>
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <FileText className="h-5 w-5 text-purple-400" />
                   </div>
-                  <div className="px-4 py-3 rounded-2xl bg-gray-700">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                </div>
+                <p className="text-gray-400 text-xs mt-1">Currently, only Video Production projects are available. Other categories coming soon!</p>
+              </div>
+
+              {/* Project Name and Freelancer ID */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-gray-300 text-sm font-semibold mb-2">
+                    Project Name *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={projectData.projectName}
+                      onChange={(e) => handleProjectInputChange('projectName', e.target.value)}
+                      placeholder="Enter your project name"
+                      className="w-full px-4 py-3 pr-12 border-2 border-gray-600 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400"
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                      <FileText className="h-5 w-5 text-purple-400" />
                     </div>
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-gray-300 text-sm font-semibold mb-2">
+                    Freelancer ID *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={projectData.freelancerId}
+                      onChange={(e) => handleProjectInputChange('freelancerId', e.target.value)}
+                      placeholder="F123456789"
+                      className="w-full px-4 py-3 pr-12 border-2 border-gray-600 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400"
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                      <User className="h-5 w-5 text-purple-400" />
+                    </div>
+                  </div>
+                  <p className="text-gray-400 text-xs mt-1">Format: F followed by 9 digits (e.g., F123456789)</p>
+                </div>
               </div>
-            )}
-          </div>
 
-          {/* Chat Input */}
-          <div className="border-t border-gray-600 p-4">
-            <div className="flex space-x-3">
-              <input
-                type="text"
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Type your message..."
-                disabled={isLoading}
-                className="flex-1 px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-400/50 disabled:opacity-50"
-              />
-              <button
-                onClick={handleSendMessage}
-                disabled={!inputMessage.trim() || isLoading}
-                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
-              >
-                <Send className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Project Options */
-        <div className="bg-gray-800 rounded-2xl p-6 sm:p-8 border border-gray-700">
-          <div className="text-center mb-8">
-            <h2 className="text-2xl font-bold text-white mb-2">Project Management</h2>
-            <p className="text-gray-300">Start a new project or resume an existing one</p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* Start New Project */}
-            <div className="bg-gray-700 rounded-xl p-6 text-center">
-              <div className="w-16 h-16 bg-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Plus className="h-8 w-8 text-white" />
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-2">Start New Project</h3>
-              <p className="text-gray-300 mb-4">Begin a fresh project with AI assistance</p>
-              <button
-                onClick={() => setShowNewProjectForm(true)}
-                className="w-full px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
-              >
-                Create New Project
-              </button>
-            </div>
-
-            {/* Resume Existing Project */}
-            <div className="bg-gray-700 rounded-xl p-6 text-center">
-              <div className="w-16 h-16 bg-cyan-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Clock className="h-8 w-8 text-white" />
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-2">Resume Existing Project</h3>
-              <p className="text-gray-300 mb-4">Continue working on saved projects</p>
-              <button
-                onClick={() => setShowResumeProjects(true)}
-                className="w-full px-4 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400"
-              >
-                View Saved Projects
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* New Project Modal */}
-      {showNewProjectForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
-          <div className="bg-gray-800 rounded-2xl p-8 max-w-md w-full border border-gray-700">
-            <h3 className="text-2xl font-bold text-white mb-6">Start New Project</h3>
-            <div className="space-y-4">
+              {/* Project Requirement */}
               <div>
                 <label className="block text-gray-300 text-sm font-semibold mb-2">
-                  Project Name
+                  Project Requirement *
                 </label>
+                <textarea
+                  rows={4}
+                  value={projectData.projectRequirement}
+                  onChange={(e) => handleProjectInputChange('projectRequirement', e.target.value)}
+                  placeholder="Describe your project requirements in detail. Include style preferences, target audience, duration, specific elements needed, etc."
+                  maxLength={300}
+                  className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400 resize-none"
+                />
+                <div className="flex justify-between items-center mt-1">
+                  <p className="text-gray-400 text-xs">Maximum 300 characters (optional limit: 300)</p>
+                  <span className="text-xs text-gray-400">{projectData.projectRequirement.length}/300</span>
+                </div>
+              </div>
+
+              {/* Desired Completion Date */}
+              <div>
+                <label className="block text-gray-300 text-sm font-semibold mb-2">
+                  Desired Completion Date *
+                </label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={projectData.desiredCompletionDate}
+                    onChange={(e) => handleProjectInputChange('desiredCompletionDate', e.target.value)}
+                    className="w-full px-4 py-3 pr-12 border-2 border-gray-600 rounded-lg bg-gray-700 text-white focus:outline-none focus:border-purple-400"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <Calendar className="h-5 w-5 text-purple-400" />
+                  </div>
+                </div>
+                <p className="text-gray-400 text-xs mt-1">Minimum date: Tomorrow</p>
+              </div>
+
+              {/* Project Files */}
+              <div>
+                <label className="block text-gray-300 text-sm font-semibold mb-2">
+                  Project Files (Optional)
+                </label>
+                <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center hover:border-gray-500 transition-colors">
+                  <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                  <p className="text-gray-300 font-medium mb-2">Drag and drop files here</p>
+                  <p className="text-sm text-gray-400 mb-4">or</p>
+                  <button
+                    type="button"
+                    className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  >
+                    Browse Files
+                  </button>
+                  <p className="text-xs text-gray-400 mt-4">
+                    Supported formats: PDF, DOC, DOCX, JPG, PNG, MP4, ZIP, etc. Max 10MB per file (max 2 files)
+                  </p>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="button"
+                onClick={handleCreateProject}
+                className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 flex items-center justify-center space-x-2"
+              >
+                <CheckCircle className="h-5 w-5" />
+                <span>Save and Continue to Deliverables</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Deliverables View */}
+      {showDeliverablesView && (
+        <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
+          <div className="mb-8">
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Project Deliverables Checklist</h2>
+            <p className="text-gray-300">Define what you expect to receive from the freelancer. Be specific and clear.</p>
+          </div>
+
+          <div className="space-y-4 mb-8">
+            {deliverables.map((deliverable) => (
+              <div key={deliverable.id} className="flex items-center space-x-4">
+                <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+                  {deliverable.id}
+                </div>
                 <input
                   type="text"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  placeholder="Enter project name..."
-                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-400/50"
+                  value={deliverable.description}
+                  onChange={(e) => updateDeliverable(deliverable.id, e.target.value)}
+                  className="flex-1 px-4 py-3 border-2 border-gray-600 rounded-lg bg-gray-700 text-white focus:outline-none focus:border-purple-400"
                 />
-              </div>
-              <div className="flex space-x-3 pt-4">
                 <button
-                  onClick={() => {
-                    setShowNewProjectForm(false);
-                    setNewProjectName('');
-                  }}
-                  className="flex-1 px-4 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
+                  onClick={() => removeDeliverable(deliverable.id)}
+                  className="p-2 text-red-400 hover:text-red-300 transition-colors"
                 >
-                  Cancel
-                </button>
-                <button
-                  onClick={startNewProject}
-                  disabled={!newProjectName.trim()}
-                  className="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
-                >
-                  Start Project
+                  <X className="h-5 w-5" />
                 </button>
               </div>
-            </div>
+            ))}
           </div>
-        </div>
-      )}
 
-      {/* Resume Projects Modal */}
-      {showResumeProjects && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
-          <div className="bg-gray-800 rounded-2xl p-8 max-w-4xl w-full max-h-[80vh] overflow-y-auto border border-gray-700">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-bold text-white">Resume Existing Project</h3>
-              <button
-                onClick={() => setShowResumeProjects(false)}
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                ✕
-              </button>
-            </div>
+          <div className="flex flex-col sm:flex-row gap-4 mb-8">
+            <button
+              onClick={addDeliverable}
+              className="flex items-center justify-center space-x-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Add Deliverable ({deliverables.length}/15)</span>
+            </button>
 
-            {projectConversations.length === 0 ? (
-              <div className="text-center py-8">
-                <Clock className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <h4 className="text-xl font-semibold text-white mb-2">No Saved Projects</h4>
-                <p className="text-gray-300">You haven't created any projects yet.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-600">
-                      <th className="text-left py-3 px-4 text-gray-300 font-semibold">Project Name</th>
-                      <th className="text-left py-3 px-4 text-gray-300 font-semibold">Status</th>
-                      <th className="text-center py-3 px-4 text-gray-300 font-semibold">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {projectConversations.map((conversation) => (
-                      <tr key={conversation.id} className="border-b border-gray-700 hover:bg-gray-700/50">
-                        <td className="py-4 px-4">
-                          <div>
-                            <div className="text-white font-medium">{conversation.project_name}</div>
-                            <div className="text-sm text-gray-400">
-                              Created {new Date(conversation.created_at).toLocaleDateString()}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-4 px-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            getProjectStatus(conversation) === 'Checklist Generated' 
-                              ? 'bg-green-900/20 text-green-400 border border-green-500/30'
-                              : getProjectStatus(conversation) === 'Parameters Finalized'
-                              ? 'bg-yellow-900/20 text-yellow-400 border border-yellow-500/30'
-                              : 'bg-gray-900/20 text-gray-400 border border-gray-500/30'
-                          }`}>
-                            {getProjectStatus(conversation)}
-                          </span>
-                        </td>
-                        <td className="py-4 px-4">
-                          <div className="flex items-center justify-center space-x-2">
-                            <button
-                              onClick={() => resumeProject(conversation)}
-                              className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400"
-                            >
-                              Resume
-                            </button>
-                            <button
-                              onClick={() => deleteProject(conversation.project_id)}
-                              className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-red-400"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <button className="flex items-center justify-center space-x-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400">
+              <FileText className="h-4 w-4" />
+              <span>Generate Deliverables with AI</span>
+            </button>
           </div>
-        </div>
-      )}
 
-      {/* Checklist Modal */}
-      {showChecklist && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="bg-gray-100 px-8 py-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="text-center flex-1">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                    CONTRACT REVIEW REPORT - {currentProject?.name.toUpperCase()}
-                  </h2>
-                  <p className="text-gray-600">(Legal and Contractual)</p>
-                </div>
-                <button
-                  onClick={() => setShowChecklist(false)}
-                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-
-            {/* Contract Details */}
-            <div className="px-8 py-6">
-              <div className="grid grid-cols-2 gap-8 mb-8">
-                <div className="space-y-4">
-                  <div className="flex">
-                    <span className="font-semibold text-gray-700 w-32">Name of Project:</span>
-                    <span className="text-gray-900">{currentProject?.name}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-gray-700 w-32">Location of Project:</span>
-                    <span className="text-gray-900">Remote/Digital</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-gray-700 w-32">Name of Contractor:</span>
-                    <span className="text-gray-900">{profileData.fullName}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-gray-700 w-32">Effective Date:</span>
-                    <span className="text-gray-900">{new Date().toLocaleDateString()}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-gray-700 w-32">Date of NTP:</span>
-                    <span className="text-gray-900">TBD</span>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <div className="flex">
-                    <span className="font-semibold text-gray-700 w-32">Ref. No.:</span>
-                    <span className="text-gray-900">{currentProject?.id}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-gray-700 w-32">CRR No.:</span>
-                    <span className="text-gray-900">CRR-{Date.now().toString().slice(-6)}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-gray-700 w-32">Project ID No.:</span>
-                    <span className="text-gray-900">{currentProject?.id.slice(0, 8)}</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-gray-700 w-32">ABC:</span>
-                    <span className="text-gray-900">SecureServe Platform</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-gray-700 w-32">Fund Source:</span>
-                    <span className="text-gray-900">Client Escrow</span>
-                  </div>
-                  <div className="flex">
-                    <span className="font-semibold text-gray-700 w-32">Contract Amount:</span>
-                    <span className="text-gray-900">
-                      {checklistData?.projectDetails?.budget || 'As per agreement'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Requirements Table */}
-              <div className="mb-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">
-                  Project Requirements and Deliverables
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse border border-gray-300">
-                    <thead>
-                      <tr className="bg-gray-100">
-                        <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">
-                          S.No.
-                        </th>
-                        <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">
-                          Requirement Category
-                        </th>
-                        <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">
-                          Specification
-                        </th>
-                        <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">
-                          Status
-                        </th>
-                        <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">
-                          Remarks
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {checklistData?.requirements ? (
-                        checklistData.requirements.map((req: any, index: number) => (
-                          <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="border border-gray-300 px-4 py-2 text-center">
-                              {index + 1}
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              {req.category || req.requirement}
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              {req.specification || req.requirement}
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2 text-center">
-                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm">
-                                Required
-                              </span>
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              {req.priority === 'high' ? 'Critical' : 'Standard'}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        // Fallback rows based on common video project requirements
-                        [
-                          { category: 'Video Type', spec: checklistData?.projectDetails?.type || 'As specified', priority: 'Critical' },
-                          { category: 'Duration', spec: checklistData?.projectDetails?.duration || 'As specified', priority: 'Critical' },
-                          { category: 'Video Style', spec: checklistData?.projectDetails?.style || 'As specified', priority: 'Standard' },
-                          { category: 'Target Audience', spec: checklistData?.projectDetails?.targetAudience || 'As specified', priority: 'Standard' },
-                          { category: 'Deliverable Format', spec: checklistData?.projectDetails?.deliverables || 'As specified', priority: 'Critical' },
-                          { category: 'Revision Rounds', spec: checklistData?.projectDetails?.revisions || 'As specified', priority: 'Standard' },
-                          { category: 'Script Requirements', spec: checklistData?.projectDetails?.script || 'As specified', priority: 'Standard' },
-                          { category: 'Voiceover', spec: checklistData?.projectDetails?.voiceover || 'As specified', priority: 'Standard' },
-                          { category: 'Music/Audio', spec: checklistData?.projectDetails?.music || 'As specified', priority: 'Standard' },
-                          { category: 'Branding Guidelines', spec: checklistData?.projectDetails?.branding || 'As specified', priority: 'Standard' },
-                          { category: 'Distribution Channels', spec: checklistData?.projectDetails?.distribution || 'As specified', priority: 'Standard' },
-                          { category: 'Success Metrics', spec: checklistData?.projectDetails?.successMetrics || 'As specified', priority: 'Standard' },
-                          { category: 'Timeline', spec: checklistData?.projectDetails?.timeline || 'As specified', priority: 'Critical' },
-                          { category: 'Budget', spec: checklistData?.projectDetails?.budget || 'As specified', priority: 'Critical' }
-                        ].map((req, index) => (
-                          <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="border border-gray-300 px-4 py-2 text-center">
-                              {index + 1}
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2 font-medium">
-                              {req.category}
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              {req.spec}
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2 text-center">
-                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm">
-                                Required
-                              </span>
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              {req.priority}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="border-t border-gray-200 pt-6">
-                <div className="text-sm text-gray-600 space-y-2">
-                  <p><strong>Note:</strong> This contract review report is generated based on the project requirements discussed and agreed upon between the client and freelancer.</p>
-                  <p><strong>Effective Date:</strong> {new Date().toLocaleDateString()}</p>
-                  <p><strong>Generated by:</strong> SecureServe AI Assistant</p>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end space-x-4 mt-6 pt-6 border-t border-gray-200">
-                <button
-                  onClick={() => setShowChecklist(false)}
-                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => window.print()}
-                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
-                >
-                  Print/Download
-                </button>
-                <button
-                  onClick={() => {
-                    // Here you would typically navigate to project creation or freelancer assignment
-                    setShowChecklist(false);
-                    setActiveTab('my-projects');
-                  }}
-                  className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-400"
-                >
-                  Proceed to Hire Freelancer
-                </button>
-              </div>
-            </div>
-          </div>
+          <button
+            onClick={() => {
+              setShowDeliverablesView(false);
+              setActiveTab('my-projects');
+            }}
+            className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 flex items-center justify-center space-x-2"
+          >
+            <CheckCircle className="h-5 w-5" />
+            <span>Add Deliverable Checklist</span>
+          </button>
         </div>
       )}
     </div>
@@ -1120,10 +783,79 @@ const ClientDashboard: React.FC = () => {
   const renderMyProjectsContent = () => (
     <div className="space-y-6 sm:space-y-8">
       <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
-        <div className="text-center py-8">
-          <Briefcase className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-white mb-2">My Projects</h3>
-          <p className="text-gray-400">Your active and completed projects will appear here.</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 space-y-4 sm:space-y-0">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">My Projects</h2>
+            <p className="text-sm sm:text-base text-gray-300">
+              Manage and track your active and completed projects
+            </p>
+          </div>
+          <div className="flex items-center space-x-2 text-sm text-gray-400">
+            <Building className="h-4 w-4" />
+            <span>16 Total Projects</span>
+          </div>
+        </div>
+
+        {/* Projects Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-gray-700">
+                <th className="text-left p-4 text-gray-300 font-semibold">Project ID</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Project Name</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Freelancer ID</th>
+                <th className="text-center p-4 text-gray-300 font-semibold">Project Status</th>
+                <th className="text-center p-4 text-gray-300 font-semibold">Deliverable Checklist</th>
+                <th className="text-center p-4 text-gray-300 font-semibold">Final Work</th>
+                <th className="text-center p-4 text-gray-300 font-semibold">Verification Report</th>
+              </tr>
+            </thead>
+            <tbody className="bg-gray-800">
+              {[
+                { id: 'V1024', name: 'first video test', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
+                { id: 'V1023', name: 'Training Video', freelancer: 'F214000319', status: 'Project Created', action: 'Edit (13)' },
+                { id: 'V1022', name: 'Training Video', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
+                { id: 'V1021', name: 'Training Video', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
+                { id: 'V1020', name: 'Training Video', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
+                { id: 'V1019', name: 'aitest8', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
+                { id: 'V1018', name: 'Aitest7', freelancer: 'F214000319', status: 'Fund Secured', action: 'View (10)' },
+                { id: 'V1017', name: 'Aitest6', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
+                { id: 'V1016', name: 'Aitest5', freelancer: 'F214000319', status: 'Fund Secured', action: 'View (6)' },
+                { id: 'V1015', name: 'aitest4', freelancer: 'F214000319', status: 'Project Created', action: 'Edit (8)' },
+                { id: 'V1014', name: 'aitest3', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
+                { id: 'V1013', name: 'AI test2', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
+                { id: 'V1012', name: 'AI test1', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
+                { id: 'V1011', name: 'test1', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
+                { id: 'V1010', name: 'test2', freelancer: 'F214000319', status: 'Fund Secured', action: 'View (3)' }
+              ].map((project) => (
+                <tr key={project.id} className="border-t border-gray-700 hover:bg-gray-700/50">
+                  <td className="p-4 text-white">{project.id}</td>
+                  <td className="p-4 text-white">{project.name}</td>
+                  <td className="p-4 text-white">{project.freelancer}</td>
+                  <td className="p-4 text-center">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      project.status === 'Fund Secured' 
+                        ? 'bg-green-900/20 text-green-400 border border-green-500/30'
+                        : 'bg-blue-900/20 text-blue-400 border border-blue-500/30'
+                    }`}>
+                      {project.status}
+                    </span>
+                  </td>
+                  <td className="p-4 text-center">
+                    <button className={`px-3 py-1 rounded text-xs font-medium ${
+                      project.action.includes('View') || project.action.includes('Edit')
+                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                        : 'bg-purple-600 hover:bg-purple-700 text-white'
+                    }`}>
+                      {project.action}
+                    </button>
+                  </td>
+                  <td className="p-4 text-center text-gray-400">-</td>
+                  <td className="p-4 text-center text-gray-400">-</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1132,22 +864,92 @@ const ClientDashboard: React.FC = () => {
   const renderTransactionsContent = () => (
     <div className="space-y-6 sm:space-y-8">
       <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
-        <div className="text-center py-8">
-          <CreditCard className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-white mb-2">Transactions</h3>
-          <p className="text-gray-400">Your payment history will appear here.</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 space-y-4 sm:space-y-0">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Transaction History</h2>
+            <p className="text-sm sm:text-base text-gray-300">
+              View your payment history and project transactions
+            </p>
+          </div>
+          <button className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-green-400">
+            Fund Escrow
+          </button>
+        </div>
+
+        {/* Transactions Table */}
+        <div className="overflow-x-auto mb-8">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-gray-700">
+                <th className="text-left p-4 text-gray-300 font-semibold">Project ID</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Project Name</th>
+                <th className="text-left p-4 text-gray-300 font-semibold">Freelancer ID</th>
+                <th className="text-right p-4 text-gray-300 font-semibold">Value (₹)</th>
+                <th className="text-center p-4 text-gray-300 font-semibold">Transaction Status</th>
+              </tr>
+            </thead>
+            <tbody className="bg-gray-800">
+              {[
+                { id: 'V1018', name: 'Aitest7', freelancer: 'F214000319', value: '₹55,000', status: 'Fund Secured' },
+                { id: 'V1016', name: 'Aitest5', freelancer: 'F214000319', value: '₹45,000', status: 'Fund Secured' },
+                { id: 'V1010', name: 'test2', freelancer: 'F214000319', value: '₹25,000', status: 'Fund Secured' },
+                { id: 'V1009', name: 'sixthtest', freelancer: 'F214000319', value: '₹32,000', status: 'Fund Secured' }
+              ].map((transaction) => (
+                <tr key={transaction.id} className="border-t border-gray-700 hover:bg-gray-700/50">
+                  <td className="p-4 text-white">{transaction.id}</td>
+                  <td className="p-4 text-white">{transaction.name}</td>
+                  <td className="p-4 text-white">{transaction.freelancer}</td>
+                  <td className="p-4 text-right text-white font-semibold">{transaction.value}</td>
+                  <td className="p-4 text-center">
+                    <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-900/20 text-green-400 border border-green-500/30">
+                      {transaction.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div className="bg-gray-700 rounded-lg p-6 text-center">
+            <div className="text-3xl font-bold text-red-400 mb-2">₹157,000</div>
+            <div className="text-sm text-gray-300">Total Spent</div>
+          </div>
+          <div className="bg-gray-700 rounded-lg p-6 text-center">
+            <div className="text-3xl font-bold text-blue-400 mb-2">4</div>
+            <div className="text-sm text-gray-300">Projects Funded</div>
+          </div>
+          <div className="bg-gray-700 rounded-lg p-6 text-center">
+            <div className="text-3xl font-bold text-purple-400 mb-2">₹39250</div>
+            <div className="text-sm text-gray-300">Average Project Cost</div>
+          </div>
         </div>
       </div>
     </div>
   );
 
-  const renderMessagesContent = () => (
+  const renderChatContent = () => (
     <div className="space-y-6 sm:space-y-8">
       <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
-        <div className="text-center py-8">
-          <MessageSquare className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-white mb-2">Messages</h3>
-          <p className="text-gray-400">Your conversations with freelancers will appear here.</p>
+        <div className="mb-6 sm:mb-8">
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Chat</h2>
+          <p className="text-sm sm:text-base text-gray-300">
+            Communicate with freelancers about your projects
+          </p>
+        </div>
+
+        <div className="text-center py-12">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+            <MessageSquare className="h-8 w-8 sm:h-10 sm:w-10 text-gray-400" />
+          </div>
+          <h3 className="text-lg sm:text-xl font-semibold text-white mb-2">
+            No conversations yet
+          </h3>
+          <p className="text-sm sm:text-base text-gray-400 max-w-md mx-auto">
+            Start a conversation with a freelancer to discuss project details, deliverables, and progress updates.
+          </p>
         </div>
       </div>
     </div>
@@ -1163,8 +965,8 @@ const ClientDashboard: React.FC = () => {
         return renderMyProjectsContent();
       case 'transactions':
         return renderTransactionsContent();
-      case 'messages':
-        return renderMessagesContent();
+      case 'chat':
+        return renderChatContent();
       default:
         return renderProfileContent();
     }
@@ -1176,13 +978,16 @@ const ClientDashboard: React.FC = () => {
       <header className="bg-gray-800 border-b border-gray-700 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between h-16">
-            <Link to="/" className="flex items-center space-x-2">
-              <User className="h-8 w-8 text-purple-400" />
+            {/* Logo */}
+            <Link to="/" className="flex items-center space-x-2 focus:outline-none focus:ring-2 focus:ring-purple-400 rounded-lg p-1">
+              <Shield className="h-8 w-8 text-purple-400" />
               <span className="text-xl font-bold text-white">SecureServe</span>
             </Link>
+
+            {/* User Menu */}
             <div className="flex items-center space-x-2 sm:space-x-4">
               <span className="text-gray-300 text-sm sm:text-base hidden sm:inline">
-                Welcome, {profileData.fullName || 'Client'}
+                Welcome, {profileData.fullName || 'Subham'}
               </span>
               <button
                 onClick={handleLogout}
@@ -1207,7 +1012,7 @@ const ClientDashboard: React.FC = () => {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center space-x-1 sm:space-x-2 py-3 sm:py-4 px-1 sm:px-2 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 ${
+                    className={`flex items-center space-x-1 sm:space-x-2 py-3 sm:py-4 px-1 sm:px-2 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-gray-900 ${
                       activeTab === tab.id
                         ? 'border-purple-400 text-purple-400'
                         : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300'
