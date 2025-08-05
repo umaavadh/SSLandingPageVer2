@@ -1104,19 +1104,16 @@ const ClientDashboard: React.FC = () => {
               <tbody className="bg-gray-800">
                 {projects.map((project) => (
                   <tr key={project.id} className="border-t border-gray-700 hover:bg-gray-700/50">
-                    <td className="p-4 text-white">{formatProjectId(project.id)}</td>
-                    <td className="p-4 text-white">{project.project_name}</td>
-                    <td className="p-4 text-white">{project.freelancer_id || '-'}</td>
+                    <td className="p-4 text-white">{project.id}</td>
+                    <td className="p-4 text-white">{project.name}</td>
+                    <td className="p-4 text-white">{project.freelancer_id}</td>
                     <td className="p-4 text-center">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadgeColor(project.status)}`}>
-                        {getStatusDisplayText(project.status)}
+                      <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-900/20 text-blue-400 border border-blue-500/30">
+                        {project.status}
                       </span>
                     </td>
                     <td className="p-4 text-center">
-                      <button 
-                        onClick={() => handleAddDeliverables(project.id)}
-                        className="px-3 py-1 rounded text-xs font-medium bg-purple-600 hover:bg-purple-700 text-white"
-                      >
+                      <button className="px-3 py-1 rounded text-xs font-medium bg-purple-600 hover:bg-purple-700 text-white">
                         Add Deliverables
                       </button>
                     </td>
