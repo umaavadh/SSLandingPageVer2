@@ -106,6 +106,7 @@ const ClientDashboard: React.FC = () => {
       const { user } = await getCurrentUser();
       if (user) {
         // Get user profile to get client_id
+        const { getUserProfile } = await import('../lib/supabase')
         const { data: profile } = await getUserProfile();
         if (profile) {
           // Query projects from Supabase
