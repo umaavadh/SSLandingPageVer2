@@ -38,12 +38,10 @@ const ClientDashboard: React.FC = () => {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
   const [showDeliverablesView, setShowDeliverablesView] = useState(false);
-  const [deliverables, setDeliverables] = useState<Deliverable[]>([
-    { id: 1, description: 'Deliverable 1 (e.g., High-quality 1080p video in MP4 format)' },
-    { id: 2, description: 'Deliverable 2 (e.g., High-quality 1080p video in MP4 format)' },
-    { id: 3, description: 'Deliverable 3 (e.g., High-quality 1080p video in MP4 format)' },
-    { id: 4, description: 'Deliverable 4 (e.g., High-quality 1080p video in MP4 format)' }
-  ]);
+  const [showWizardChat, setShowWizardChat] = useState(false);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(true);
 
   const [profileData, setProfileData] = useState<ProfileData>({
     fullName: '',
@@ -64,6 +62,13 @@ const ClientDashboard: React.FC = () => {
     projectRequirement: '',
     desiredCompletionDate: '',
     projectFiles: []
+  });
+
+  const [projectErrors, setProjectErrors] = useState({
+    projectName: '',
+    freelancerId: '',
+    projectRequirement: '',
+    outputSubmissionBy: ''
   });
 
   const [originalData, setOriginalData] = useState<ProfileData>({
@@ -87,11 +92,28 @@ const ClientDashboard: React.FC = () => {
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
-    { id: 'create-project', label: 'Create Project', icon: Plus },
+    { id: 'create-project', label: 'New Project', icon: Plus },
     { id: 'my-projects', label: 'My Projects', icon: Building },
     { id: 'transactions', label: 'Transactions', icon: CreditCard },
-    { id: 'chat', label: 'Chat', icon: MessageSquare }
+    { id: 'chat', label: 'Messages', icon: MessageSquare }
   ];
+
+  // Load projects from Supabase
+  const loadProjects = async () => {
+    try {
+      setLoadingProjects(true);
+      const { user } = await getCurrentUser();
+      if (user) {
+        // This would be replaced with actual Supabase query for projects
+        // For now, we'll show empty state
+        setProjects([]);
+      }
+    } catch (error) {
+      console.error('Error loading projects:', error);
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
 
   // Load user data on component mount
   useEffect(() => {
@@ -132,6 +154,7 @@ const ClientDashboard: React.FC = () => {
       }
     };
 
+    loadProjects();
     loadUserData();
   }, []);
 
@@ -153,8 +176,68 @@ const ClientDashboard: React.FC = () => {
   };
 
   // Handle project input changes
-  const handleProjectInputChange = (field: keyof ProjectData, value: string) => {
+  const handleProjectInputChange = (field: keyof ProjectData, value: string | Date) => {
     setProjectData(prev => ({ ...prev, [field]: value }));
+    
+    // Clear error when user starts typing
+    if (projectErrors[field as keyof typeof projectErrors]) {
+      setProjectErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  // Validate project form
+  const validateProjectForm = () => {
+    const newErrors = {
+      projectName: '',
+      freelancerId: '',
+      projectRequirement: '',
+      outputSubmissionBy: ''
+    };
+
+    // Project Name validation
+    if (!projectData.projectName.trim()) {
+      newErrors.projectName = 'Project name is required';
+    }
+
+    // Freelancer ID validation - exactly 10 characters, starts with F
+    if (!projectData.freelancerId.trim()) {
+      newErrors.freelancerId = 'Freelancer ID is required';
+    } else if (!/^F\d{9}$/.test(projectData.freelancerId)) {
+      newErrors.freelancerId = 'Freelancer ID must be exactly 10 characters: F followed by 9 digits';
+    }
+
+    // Project Requirement validation - 20-300 characters
+    if (!projectData.projectRequirement.trim()) {
+      newErrors.projectRequirement = 'Project requirement is required';
+    } else if (projectData.projectRequirement.trim().length < 20) {
+      newErrors.projectRequirement = 'Project requirement must be at least 20 characters';
+    } else if (projectData.projectRequirement.trim().length > 300) {
+      newErrors.projectRequirement = 'Project requirement must not exceed 300 characters';
+    }
+
+    // Output Submission Date validation - must be in future
+    if (!projectData.desiredCompletionDate) {
+      newErrors.outputSubmissionBy = 'Output submission date and time is required';
+    } else {
+      const selectedDate = new Date(projectData.desiredCompletionDate);
+      const now = new Date();
+      if (selectedDate <= now) {
+        newErrors.outputSubmissionBy = 'Output submission date must be in the future';
+      }
+    }
+
+    setProjectErrors(newErrors);
+    return Object.values(newErrors).every(error => error === '');
+  };
+
+  // Check if form is valid
+  const isProjectFormValid = () => {
+    return projectData.projectName.trim() &&
+           /^F\d{9}$/.test(projectData.freelancerId) &&
+           projectData.projectRequirement.trim().length >= 20 &&
+           projectData.projectRequirement.trim().length <= 300 &&
+           projectData.desiredCompletionDate &&
+           new Date(projectData.desiredCompletionDate) > new Date();
   };
 
   // Validate form fields
@@ -256,31 +339,52 @@ const ClientDashboard: React.FC = () => {
   };
 
   // Handle create project
-  const handleCreateProject = () => {
-    // Generate project ID
-    const projectId = 'Will be auto generated';
-    setProjectData(prev => ({ ...prev, projectId }));
-    setShowCreateProjectModal(false);
-    setShowDeliverablesView(true);
+  const handleCreateProject = async () => {
+    if (!validateProjectForm()) {
+      return;
+    }
+
+    setIsCreatingProject(true);
+    try {
+      // Here you would save to Supabase
+      // For now, we'll simulate the process
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Generate project ID (this would come from Supabase)
+      const projectId = `V${Math.floor(Math.random() * 9000) + 1000}`;
+      
+      // Add to projects list
+      const newProject = {
+        id: projectId,
+        name: projectData.projectName,
+        freelancer_id: projectData.freelancerId,
+        status: 'Project Created',
+        created_at: new Date().toISOString()
+      };
+      
+      setProjects(prev => [newProject, ...prev]);
+      setProjectData({
+        projectId: '',
+        projectCategory: 'Video Production',
+        projectName: '',
+        freelancerId: '',
+        projectRequirement: '',
+        desiredCompletionDate: '',
+        projectFiles: []
+      });
+      setShowCreateProjectModal(false);
+      setShowDeliverablesView(true);
+    } catch (error) {
+      console.error('Error creating project:', error);
+    } finally {
+      setIsCreatingProject(false);
+    }
   };
 
-  // Add deliverable
-  const addDeliverable = () => {
-    const newId = Math.max(...deliverables.map(d => d.id)) + 1;
-    setDeliverables(prev => [...prev, { 
-      id: newId, 
-      description: `Deliverable ${newId} (e.g., High-quality 1080p video in MP4 format)` 
-    }]);
-  };
-
-  // Remove deliverable
-  const removeDeliverable = (id: number) => {
-    setDeliverables(prev => prev.filter(d => d.id !== id));
-  };
-
-  // Update deliverable
-  const updateDeliverable = (id: number, description: string) => {
-    setDeliverables(prev => prev.map(d => d.id === id ? { ...d, description } : d));
+  // Handle start wizard
+  const handleStartWizard = () => {
+    setShowDeliverablesView(false);
+    setShowWizardChat(true);
   };
 
   const renderProfileContent = () => (
@@ -619,12 +723,19 @@ const ClientDashboard: React.FC = () => {
                       value={projectData.projectName}
                       onChange={(e) => handleProjectInputChange('projectName', e.target.value)}
                       placeholder="Enter your project name"
-                      className="w-full px-4 py-3 pr-12 border-2 border-gray-600 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400"
+                      className={`w-full px-4 py-3 pr-12 border-2 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none transition-colors ${
+                        projectErrors.projectName 
+                          ? 'border-red-500 focus:border-red-400' 
+                          : 'border-gray-600 focus:border-purple-400'
+                      }`}
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
                       <FileText className="h-5 w-5 text-purple-400" />
                     </div>
                   </div>
+                  {projectErrors.projectName && (
+                    <p className="text-red-400 text-xs mt-1">{projectErrors.projectName}</p>
+                  )}
                 </div>
 
                 <div>
@@ -635,15 +746,23 @@ const ClientDashboard: React.FC = () => {
                     <input
                       type="text"
                       value={projectData.freelancerId}
-                      onChange={(e) => handleProjectInputChange('freelancerId', e.target.value)}
+                      onChange={(e) => handleProjectInputChange('freelancerId', e.target.value.toUpperCase())}
                       placeholder="F123456789"
-                      className="w-full px-4 py-3 pr-12 border-2 border-gray-600 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400"
+                      maxLength={10}
+                      className={`w-full px-4 py-3 pr-12 border-2 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none transition-colors ${
+                        projectErrors.freelancerId 
+                          ? 'border-red-500 focus:border-red-400' 
+                          : 'border-gray-600 focus:border-purple-400'
+                      }`}
                     />
                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
                       <User className="h-5 w-5 text-purple-400" />
                     </div>
                   </div>
-                  <p className="text-gray-400 text-xs mt-1">Format: F followed by 9 digits (e.g., F123456789)</p>
+                  <p className="text-gray-400 text-xs mt-1">Format: F followed by exactly 9 digits</p>
+                  {projectErrors.freelancerId && (
+                    <p className="text-red-400 text-xs mt-1">{projectErrors.freelancerId}</p>
+                  )}
                 </div>
               </div>
 
@@ -657,32 +776,48 @@ const ClientDashboard: React.FC = () => {
                   value={projectData.projectRequirement}
                   onChange={(e) => handleProjectInputChange('projectRequirement', e.target.value)}
                   placeholder="Describe your project requirements in detail. Include style preferences, target audience, duration, specific elements needed, etc."
+                  minLength={20}
                   maxLength={300}
-                  className="w-full px-4 py-3 border-2 border-gray-600 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400 resize-none"
+                  className={`w-full px-4 py-3 border-2 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none transition-colors resize-none ${
+                    projectErrors.projectRequirement 
+                      ? 'border-red-500 focus:border-red-400' 
+                      : 'border-gray-600 focus:border-purple-400'
+                  }`}
                 />
                 <div className="flex justify-between items-center mt-1">
-                  <p className="text-gray-400 text-xs">Maximum 300 characters (optional limit: 300)</p>
+                  <p className="text-gray-400 text-xs">Minimum 20 characters, Maximum 300 characters</p>
                   <span className="text-xs text-gray-400">{projectData.projectRequirement.length}/300</span>
                 </div>
+                {projectErrors.projectRequirement && (
+                  <p className="text-red-400 text-xs mt-1">{projectErrors.projectRequirement}</p>
+                )}
               </div>
 
-              {/* Desired Completion Date */}
+              {/* Output Submission By */}
               <div>
                 <label className="block text-gray-300 text-sm font-semibold mb-2">
-                  Desired Completion Date *
+                  Output Submission By *
                 </label>
                 <div className="relative">
                   <input
-                    type="date"
+                    type="datetime-local"
                     value={projectData.desiredCompletionDate}
                     onChange={(e) => handleProjectInputChange('desiredCompletionDate', e.target.value)}
-                    className="w-full px-4 py-3 pr-12 border-2 border-gray-600 rounded-lg bg-gray-700 text-white focus:outline-none focus:border-purple-400"
+                    min={new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16)}
+                    className={`w-full px-4 py-3 pr-12 border-2 rounded-lg bg-gray-700 text-white focus:outline-none transition-colors ${
+                      projectErrors.outputSubmissionBy 
+                        ? 'border-red-500 focus:border-red-400' 
+                        : 'border-gray-600 focus:border-purple-400'
+                    }`}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
                     <Calendar className="h-5 w-5 text-purple-400" />
                   </div>
                 </div>
-                <p className="text-gray-400 text-xs mt-1">Minimum date: Tomorrow</p>
+                <p className="text-gray-400 text-xs mt-1">Select date and time (must be in the future)</p>
+                {projectErrors.outputSubmissionBy && (
+                  <p className="text-red-400 text-xs mt-1">{projectErrors.outputSubmissionBy}</p>
+                )}
               </div>
 
               {/* Project Files */}
@@ -710,10 +845,24 @@ const ClientDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={handleCreateProject}
-                className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 flex items-center justify-center space-x-2"
+                disabled={!isProjectFormValid() || isCreatingProject}
+                className={`w-full py-4 rounded-lg font-semibold text-lg transition-colors focus:outline-none focus:ring-2 flex items-center justify-center space-x-2 ${
+                  isProjectFormValid() && !isCreatingProject
+                    ? 'bg-purple-600 hover:bg-purple-700 text-white focus:ring-purple-400'
+                    : 'bg-gray-600 text-gray-400 cursor-not-allowed focus:ring-gray-400'
+                }`}
               >
-                <CheckCircle className="h-5 w-5" />
-                <span>Save and Continue to Deliverables</span>
+                {isCreatingProject ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span>Creating Project...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-5 w-5" />
+                    <span>Save and Continue to Deliverables</span>
+                  </>
+                )}
               </button>
             </form>
           </div>
@@ -728,53 +877,33 @@ const ClientDashboard: React.FC = () => {
             <p className="text-gray-300">Define what you expect to receive from the freelancer. Be specific and clear.</p>
           </div>
 
-          <div className="space-y-4 mb-8">
-            {deliverables.map((deliverable) => (
-              <div key={deliverable.id} className="flex items-center space-x-4">
-                <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-                  {deliverable.id}
-                </div>
-                <input
-                  type="text"
-                  value={deliverable.description}
-                  onChange={(e) => updateDeliverable(deliverable.id, e.target.value)}
-                  className="flex-1 px-4 py-3 border-2 border-gray-600 rounded-lg bg-gray-700 text-white focus:outline-none focus:border-purple-400"
-                />
-                <button
-                  onClick={() => removeDeliverable(deliverable.id)}
-                  className="p-2 text-red-400 hover:text-red-300 transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-4 mb-8">
+          <div className="text-center py-12 mb-8">
+            <div className="w-16 h-16 bg-cyan-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <MessageSquare className="h-8 w-8 text-white" />
+            </div>
+            <h3 className="text-xl font-semibold text-white mb-2">
+              Generate Deliverables with AI
+            </h3>
+            <p className="text-gray-300 mb-6 max-w-md mx-auto">
+              Let our AI wizard help you create a comprehensive deliverables checklist based on your project requirements.
+            </p>
             <button
-              onClick={addDeliverable}
-              className="flex items-center justify-center space-x-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
+              onClick={handleStartWizard}
+              className="px-8 py-4 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-semibold text-lg transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 flex items-center justify-center space-x-2 mx-auto"
             >
-              <Plus className="h-4 w-4" />
-              <span>Add Deliverable ({deliverables.length}/15)</span>
-            </button>
-
-            <button className="flex items-center justify-center space-x-2 px-6 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400">
-              <FileText className="h-4 w-4" />
-              <span>Generate Deliverables with AI</span>
+              <MessageSquare className="h-5 w-5" />
+              <span>Generate Fields with SecureServe Wizard</span>
             </button>
           </div>
 
-          <button
-            onClick={() => {
-              setShowDeliverablesView(false);
-              setActiveTab('my-projects');
-            }}
-            className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-lg transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400 flex items-center justify-center space-x-2"
-          >
-            <CheckCircle className="h-5 w-5" />
-            <span>Add Deliverable Checklist</span>
-          </button>
+          <div className="text-center">
+            <button
+              onClick={() => setShowDeliverablesView(false)}
+              className="px-6 py-2 text-gray-400 hover:text-white transition-colors"
+            >
+              ← Back to Create Project
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -792,71 +921,72 @@ const ClientDashboard: React.FC = () => {
           </div>
           <div className="flex items-center space-x-2 text-sm text-gray-400">
             <Building className="h-4 w-4" />
-            <span>16 Total Projects</span>
+            <span>{projects.length} Total Projects</span>
           </div>
         </div>
 
         {/* Projects Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-700">
-                <th className="text-left p-4 text-gray-300 font-semibold">Project ID</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Project Name</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Freelancer ID</th>
-                <th className="text-center p-4 text-gray-300 font-semibold">Project Status</th>
-                <th className="text-center p-4 text-gray-300 font-semibold">Deliverable Checklist</th>
-                <th className="text-center p-4 text-gray-300 font-semibold">Final Work</th>
-                <th className="text-center p-4 text-gray-300 font-semibold">Verification Report</th>
-              </tr>
-            </thead>
-            <tbody className="bg-gray-800">
-              {[
-                { id: 'V1024', name: 'first video test', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
-                { id: 'V1023', name: 'Training Video', freelancer: 'F214000319', status: 'Project Created', action: 'Edit (13)' },
-                { id: 'V1022', name: 'Training Video', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
-                { id: 'V1021', name: 'Training Video', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
-                { id: 'V1020', name: 'Training Video', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
-                { id: 'V1019', name: 'aitest8', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
-                { id: 'V1018', name: 'Aitest7', freelancer: 'F214000319', status: 'Fund Secured', action: 'View (10)' },
-                { id: 'V1017', name: 'Aitest6', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
-                { id: 'V1016', name: 'Aitest5', freelancer: 'F214000319', status: 'Fund Secured', action: 'View (6)' },
-                { id: 'V1015', name: 'aitest4', freelancer: 'F214000319', status: 'Project Created', action: 'Edit (8)' },
-                { id: 'V1014', name: 'aitest3', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
-                { id: 'V1013', name: 'AI test2', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
-                { id: 'V1012', name: 'AI test1', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
-                { id: 'V1011', name: 'test1', freelancer: 'F214000319', status: 'Project Created', action: 'Add Deliverables' },
-                { id: 'V1010', name: 'test2', freelancer: 'F214000319', status: 'Fund Secured', action: 'View (3)' }
-              ].map((project) => (
-                <tr key={project.id} className="border-t border-gray-700 hover:bg-gray-700/50">
-                  <td className="p-4 text-white">{project.id}</td>
-                  <td className="p-4 text-white">{project.name}</td>
-                  <td className="p-4 text-white">{project.freelancer}</td>
-                  <td className="p-4 text-center">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      project.status === 'Fund Secured' 
-                        ? 'bg-green-900/20 text-green-400 border border-green-500/30'
-                        : 'bg-blue-900/20 text-blue-400 border border-blue-500/30'
-                    }`}>
-                      {project.status}
-                    </span>
-                  </td>
-                  <td className="p-4 text-center">
-                    <button className={`px-3 py-1 rounded text-xs font-medium ${
-                      project.action.includes('View') || project.action.includes('Edit')
-                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                        : 'bg-purple-600 hover:bg-purple-700 text-white'
-                    }`}>
-                      {project.action}
-                    </button>
-                  </td>
-                  <td className="p-4 text-center text-gray-400">-</td>
-                  <td className="p-4 text-center text-gray-400">-</td>
+        {loadingProjects ? (
+          <div className="text-center py-12">
+            <div className="w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-400">Loading projects...</p>
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Building className="h-8 w-8 text-gray-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-white mb-2">
+              No Projects Yet
+            </h3>
+            <p className="text-gray-400 mb-6 max-w-md mx-auto">
+              You haven't created any projects yet. Start by creating your first project to work with freelancers.
+            </p>
+            <button
+              onClick={() => setActiveTab('create-project')}
+              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-purple-400"
+            >
+              Create Your First Project
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-700">
+                  <th className="text-left p-4 text-gray-300 font-semibold">Project ID</th>
+                  <th className="text-left p-4 text-gray-300 font-semibold">Project Name</th>
+                  <th className="text-left p-4 text-gray-300 font-semibold">Freelancer ID</th>
+                  <th className="text-center p-4 text-gray-300 font-semibold">Project Status</th>
+                  <th className="text-center p-4 text-gray-300 font-semibold">Deliverable Checklist</th>
+                  <th className="text-center p-4 text-gray-300 font-semibold">Final Work</th>
+                  <th className="text-center p-4 text-gray-300 font-semibold">Verification Report</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="bg-gray-800">
+                {projects.map((project) => (
+                  <tr key={project.id} className="border-t border-gray-700 hover:bg-gray-700/50">
+                    <td className="p-4 text-white">{project.id}</td>
+                    <td className="p-4 text-white">{project.name}</td>
+                    <td className="p-4 text-white">{project.freelancer_id}</td>
+                    <td className="p-4 text-center">
+                      <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-900/20 text-blue-400 border border-blue-500/30">
+                        {project.status}
+                      </span>
+                    </td>
+                    <td className="p-4 text-center">
+                      <button className="px-3 py-1 rounded text-xs font-medium bg-purple-600 hover:bg-purple-700 text-white">
+                        Add Deliverables
+                      </button>
+                    </td>
+                    <td className="p-4 text-center text-gray-400">-</td>
+                    <td className="p-4 text-center text-gray-400">-</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -876,53 +1006,31 @@ const ClientDashboard: React.FC = () => {
           </button>
         </div>
 
-        {/* Transactions Table */}
-        <div className="overflow-x-auto mb-8">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-700">
-                <th className="text-left p-4 text-gray-300 font-semibold">Project ID</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Project Name</th>
-                <th className="text-left p-4 text-gray-300 font-semibold">Freelancer ID</th>
-                <th className="text-right p-4 text-gray-300 font-semibold">Value (₹)</th>
-                <th className="text-center p-4 text-gray-300 font-semibold">Transaction Status</th>
-              </tr>
-            </thead>
-            <tbody className="bg-gray-800">
-              {[
-                { id: 'V1018', name: 'Aitest7', freelancer: 'F214000319', value: '₹55,000', status: 'Fund Secured' },
-                { id: 'V1016', name: 'Aitest5', freelancer: 'F214000319', value: '₹45,000', status: 'Fund Secured' },
-                { id: 'V1010', name: 'test2', freelancer: 'F214000319', value: '₹25,000', status: 'Fund Secured' },
-                { id: 'V1009', name: 'sixthtest', freelancer: 'F214000319', value: '₹32,000', status: 'Fund Secured' }
-              ].map((transaction) => (
-                <tr key={transaction.id} className="border-t border-gray-700 hover:bg-gray-700/50">
-                  <td className="p-4 text-white">{transaction.id}</td>
-                  <td className="p-4 text-white">{transaction.name}</td>
-                  <td className="p-4 text-white">{transaction.freelancer}</td>
-                  <td className="p-4 text-right text-white font-semibold">{transaction.value}</td>
-                  <td className="p-4 text-center">
-                    <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-900/20 text-green-400 border border-green-500/30">
-                      {transaction.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* Empty State */}
+        <div className="text-center py-12 mb-8">
+          <div className="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CreditCard className="h-8 w-8 text-gray-400" />
+          </div>
+          <h3 className="text-xl font-semibold text-white mb-2">
+            No Transactions Yet
+          </h3>
+          <p className="text-gray-400 mb-6 max-w-md mx-auto">
+            Your payment history will appear here once you fund projects and complete transactions.
+          </p>
         </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           <div className="bg-gray-700 rounded-lg p-6 text-center">
-            <div className="text-3xl font-bold text-red-400 mb-2">₹157,000</div>
+            <div className="text-3xl font-bold text-red-400 mb-2">₹0</div>
             <div className="text-sm text-gray-300">Total Spent</div>
           </div>
           <div className="bg-gray-700 rounded-lg p-6 text-center">
-            <div className="text-3xl font-bold text-blue-400 mb-2">4</div>
+            <div className="text-3xl font-bold text-blue-400 mb-2">0</div>
             <div className="text-sm text-gray-300">Projects Funded</div>
           </div>
           <div className="bg-gray-700 rounded-lg p-6 text-center">
-            <div className="text-3xl font-bold text-purple-400 mb-2">₹39250</div>
+            <div className="text-3xl font-bold text-purple-400 mb-2">₹0</div>
             <div className="text-sm text-gray-300">Average Project Cost</div>
           </div>
         </div>
@@ -930,11 +1038,11 @@ const ClientDashboard: React.FC = () => {
     </div>
   );
 
-  const renderChatContent = () => (
+  const renderMessagesContent = () => (
     <div className="space-y-6 sm:space-y-8">
       <div className="bg-gray-800 rounded-2xl p-4 sm:p-6 lg:p-8 border border-gray-700">
         <div className="mb-6 sm:mb-8">
-          <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Chat</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Messages</h2>
           <p className="text-sm sm:text-base text-gray-300">
             Communicate with freelancers about your projects
           </p>
@@ -966,7 +1074,7 @@ const ClientDashboard: React.FC = () => {
       case 'transactions':
         return renderTransactionsContent();
       case 'chat':
-        return renderChatContent();
+        return renderMessagesContent();
       default:
         return renderProfileContent();
     }
